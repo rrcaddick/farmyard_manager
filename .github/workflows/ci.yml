@@ -7,12 +7,12 @@ env:
 
 on:
   pull_request:
-    branches: ['master', 'main']
-    paths-ignore: ['docs/**']
+    branches: ["master", "main"]
+    paths-ignore: ["docs/**"]
 
   push:
-    branches: ['master', 'main']
-    paths-ignore: ['docs/**']
+    branches: ["master", "main"]
+    paths-ignore: ["docs/**"]
 
 concurrency:
   group: ${{ github.head_ref || github.run_id }}
@@ -28,11 +28,11 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version-file: '.python-version'
+          python-version-file: ".python-version"
+
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
 
-  # With no caching at all the entire ci process takes 3m to complete!
   pytest:
     runs-on: ubuntu-latest
 
@@ -41,17 +41,27 @@ jobs:
         image: redis:6
         ports:
           - 6379:6379
-      postgres:
-        image: postgres:16
+      mysql:
+        image: mysql:8.0
         ports:
-          - 5432:5432
+          - 3306:3306
         env:
-          POSTGRES_PASSWORD: postgres
+          MYSQL_ROOT_PASSWORD: ${{ secrets.LOCAL_MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.LOCAL_MYSQL_DB }}
+          MYSQL_USER: ${{ secrets.LOCAL_MYSQL_USERNAME }}
+          MYSQL_PASSWORD: ${{ secrets.LOCAL_MYSQL_PASSWORD }}
 
     env:
-      REDIS_URL: 'redis://localhost:6379/0'
-      # postgres://user:password@host:port/database
-      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+      REDIS_URL: "redis://localhost:6379/0"
+
+      # MySQL environment variables (Strictly using GitHub Secrets)
+      LOCAL_MYSQL_DB: ${{ secrets.LOCAL_MYSQL_DB }}
+      LOCAL_MYSQL_USERNAME: ${{ secrets.LOCAL_MYSQL_USERNAME }}
+      LOCAL_MYSQL_PASSWORD: ${{ secrets.LOCAL_MYSQL_PASSWORD }}
+      PA_MYSQL_USERNAME: ${{ secrets.PA_MYSQL_USERNAME }}
+      PA_MYSQL_PASSWORD: ${{ secrets.PA_MYSQL_PASSWORD }}
+      PA_MYSQL_HOSTNAME: ${{ secrets.PA_MYSQL_HOSTNAME }}
+      PA_MYSQL_PORT: ${{ secrets.PA_MYSQL_PORT }}
 
     steps:
       - name: Checkout Code Repository
@@ -60,7 +70,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version-file: '.python-version'
+          python-version-file: ".python-version"
           cache: pip
           cache-dependency-path: |
             requirements/base.txt
@@ -71,11 +81,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements/local.txt
 
+      - name: Verify Required Environment Variables
+        run: |
+          : "${LOCAL_MYSQL_DB:?Environment variable LOCAL_MYSQL_DB is not set}"
+          : "${LOCAL_MYSQL_USERNAME:?Environment variable LOCAL_MYSQL_USERNAME is not set}"
+          : "${LOCAL_MYSQL_PASSWORD:?Environment variable LOCAL_MYSQL_PASSWORD is not set}"
+          : "${PA_MYSQL_USERNAME:?Environment variable PA_MYSQL_USERNAME is not set}"
+          : "${PA_MYSQL_PASSWORD:?Environment variable PA_MYSQL_PASSWORD is not set}"
+          : "${PA_MYSQL_HOSTNAME:?Environment variable PA_MYSQL_HOSTNAME is not set}"
+          : "${PA_MYSQL_PORT:?Environment variable PA_MYSQL_PORT is not set}"
+
       - name: Check DB Migrations
         run: python manage.py makemigrations --check
 
       - name: Run DB Migrations
         run: python manage.py migrate
 
-      - name: Test with pytest
+      - name: Run Tests with pytest
         run: pytest
