@@ -278,3 +278,6 @@ farmyard_manager/media/
 .pytest_cache/
 farmyard_manager/static/webpack_bundles/
 webpack-stats.json
+
+# Generated css files
+farmyard_manager/static/css/

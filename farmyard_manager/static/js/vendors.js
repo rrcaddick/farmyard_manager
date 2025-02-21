@@ -1,2 +1,2 @@
-import '@popperjs/core';
-import 'bootstrap';
+// import "@popperjs/core";
+// import "bootstrap";

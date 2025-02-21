@@ -3,15 +3,17 @@
 {% load i18n %}
 
 {% block bodyclass %}
-  bg-light
-{% endblock bodyclass %}
-{% block css %}
-  {{ block.super }}
-{% endblock css %}
-{% block title %}
+  bg-light {%
+  endblock bodyclass %}
+  {% block css %}
+    {{ block.super }}
+  {% endblock css %}
+  {%
+  block title %}
   {% block head_title %}
     {% trans "Sign In" %}
-  {% endblock head_title %}
+  {% endblock
+  head_title %}
 {% endblock title %}
 {% block body %}
   <div class="d-flex justify-content-center h-100 py-4">
@@ -29,7 +31,8 @@
       {% endif %}
       {% block content %}
       {% endblock content %}
-      {% block extra_body %}
+      {% block
+        extra_body %}
       {% endblock extra_body %}
     </div>
   </div>
