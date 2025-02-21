@@ -1,18 +1,18 @@
+import uuid
+
 from django.contrib.auth.models import AbstractUser
 from django.db.models import CharField
+from django.db.models import UUIDField
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
+from django_extensions.db.models import TimeStampedModel
 
 
-class User(AbstractUser):
-    """
-    Default custom user model for Farmyard Manager.
-    If adding fields that need to be filled at user signup,
-    check forms.SignupForm and forms.SocialSignupForms accordingly.
-    """
-
-    # First and last name do not cover name patterns around the globe
+class User(AbstractUser, TimeStampedModel):
+    uuid = UUIDField(unique=True, default=uuid.uuid4, editable=False)
     name = CharField(_("Name of User"), blank=True, max_length=255)
+
+    # Remove unwanted AbstractUser fields
     first_name = None  # type: ignore[assignment]
     last_name = None  # type: ignore[assignment]
 
