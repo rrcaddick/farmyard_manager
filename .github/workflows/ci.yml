@@ -4,7 +4,6 @@ name: CI
 env:
   DOCKER_BUILDKIT: 1
   COMPOSE_DOCKER_CLI_BUILD: 1
-
 on:
   pull_request:
     branches: ["master", "main"]
@@ -35,7 +34,11 @@ jobs:
 
   pytest:
     runs-on: ubuntu-latest
-
+    env:
+      MYSQL_DATABASE: test_db
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+      DATABASE_ENDPOINT: 127.0.0.1
     services:
       redis:
         image: redis:6
@@ -43,26 +46,12 @@ jobs:
           - 6379:6379
       mysql:
         image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test_db
         ports:
           - 3306:3306
-        env:
-          MYSQL_ROOT_PASSWORD: ${{ secrets.LOCAL_MYSQL_PASSWORD }}
-          MYSQL_DATABASE: ${{ secrets.LOCAL_MYSQL_DB }}
-          MYSQL_USER: ${{ secrets.LOCAL_MYSQL_USERNAME }}
-          MYSQL_PASSWORD: ${{ secrets.LOCAL_MYSQL_PASSWORD }}
-
-    env:
-      REDIS_URL: "redis://localhost:6379/0"
-
-      # MySQL environment variables (Strictly using GitHub Secrets)
-      LOCAL_MYSQL_DB: ${{ secrets.LOCAL_MYSQL_DB }}
-      LOCAL_MYSQL_USERNAME: ${{ secrets.LOCAL_MYSQL_USERNAME }}
-      LOCAL_MYSQL_PASSWORD: ${{ secrets.LOCAL_MYSQL_PASSWORD }}
-      PA_MYSQL_USERNAME: ${{ secrets.PA_MYSQL_USERNAME }}
-      PA_MYSQL_PASSWORD: ${{ secrets.PA_MYSQL_PASSWORD }}
-      PA_MYSQL_HOSTNAME: ${{ secrets.PA_MYSQL_HOSTNAME }}
-      PA_MYSQL_PORT: ${{ secrets.PA_MYSQL_PORT }}
-
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
     steps:
       - name: Checkout Code Repository
         uses: actions/checkout@v4
@@ -76,20 +65,15 @@ jobs:
             requirements/base.txt
             requirements/local.txt
 
-      - name: Install Dependencies
+      - name: Install Ubuntu dependencies
+        run: |
+          sudo apt update
+          sudo apt-get install -y libcurl4-openssl-dev libmysqlclient-dev libgirepository1.0-dev
+
+      - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements/local.txt
-
-      - name: Verify Required Environment Variables
-        run: |
-          : "${LOCAL_MYSQL_DB:?Environment variable LOCAL_MYSQL_DB is not set}"
-          : "${LOCAL_MYSQL_USERNAME:?Environment variable LOCAL_MYSQL_USERNAME is not set}"
-          : "${LOCAL_MYSQL_PASSWORD:?Environment variable LOCAL_MYSQL_PASSWORD is not set}"
-          : "${PA_MYSQL_USERNAME:?Environment variable PA_MYSQL_USERNAME is not set}"
-          : "${PA_MYSQL_PASSWORD:?Environment variable PA_MYSQL_PASSWORD is not set}"
-          : "${PA_MYSQL_HOSTNAME:?Environment variable PA_MYSQL_HOSTNAME is not set}"
-          : "${PA_MYSQL_PORT:?Environment variable PA_MYSQL_PORT is not set}"
 
       - name: Check DB Migrations
         run: python manage.py makemigrations --check
@@ -98,4 +82,4 @@ jobs:
         run: python manage.py migrate
 
       - name: Run Tests with pytest
-        run: pytest
+        run: pytest .
