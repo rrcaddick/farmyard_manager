@@ -68,7 +68,8 @@ venv/
 ENV/
 
 # Env variables
-.env
+*.env
+.base.env
 
 # Rope project settings
 .ropeproject
