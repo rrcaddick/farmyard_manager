@@ -99,7 +99,7 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "farmyard_manager.users",
-    # Your stuff: custom apps go here
+    "farmyard_manager.vehicles",
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -370,5 +370,6 @@ WEBPACK_LOADER = {
         "IGNORE": [r".+\.hot-update.js", r".+\.map"],
     },
 }
-# Your stuff...
-# ------------------------------------------------------------------------------
+
+# famyard_manager settings
+MAX_SECURITY_FAILS = 5

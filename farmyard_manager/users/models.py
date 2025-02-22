@@ -16,6 +16,10 @@ class User(AbstractUser, TimeStampedModel):
     first_name = None  # type: ignore[assignment]
     last_name = None  # type: ignore[assignment]
 
+    @staticmethod
+    def get_admin_user():
+        return User.objects.get(username="admin")
+
     def get_absolute_url(self) -> str:
         """Get URL for user's detail view.
 
