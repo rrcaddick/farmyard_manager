@@ -7,10 +7,16 @@ from .models import Vehicle
 
 @admin.register(Vehicle)
 class VehicleAdmin(admin.ModelAdmin):
-    list_display = ("make", "model", "plate_number", "security_fails", "is_blacklisted")
+    list_display = (
+        "make",
+        "model",
+        "plate_number",
+        "security_fail_count",
+        "is_blacklisted",
+    )
     list_filter = ("make", "plate_number", "is_blacklisted")
     search_fields = ("plate_number", "make", "model")
-    readonly_fields = ("security_fails", "is_blacklisted")
+    hccreadonly_fields = ("security_fail_count", "is_blacklisted")
 
 
 @admin.register(SecurityFail)
