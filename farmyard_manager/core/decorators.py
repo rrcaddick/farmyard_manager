@@ -11,7 +11,7 @@ def required_field(field):
     return field
 
 
-def requires_fields(cls):
+def requires_child_fields(baseclass):
     """
     Class decorator that validates required fields in subclasses.
 
@@ -24,7 +24,7 @@ def requires_fields(cls):
 
     def new_init_subclass(subclass, **kwargs):
         # Safely call the original __init_subclass__, if it exists
-        super(cls, cls).__init_subclass__(**kwargs)
+        super(baseclass, subclass).__init_subclass__(**kwargs)
 
         # Skip validation for abstract models
         if hasattr(subclass, "Meta") and getattr(subclass.Meta, "abstract", False):
@@ -34,8 +34,8 @@ def requires_fields(cls):
         _validate_required_fields_for_subclass(subclass)
 
     # Replace the __init_subclass__ method
-    cls.__init_subclass__ = new_init_subclass
-    return cls
+    baseclass.__init_subclass__ = classmethod(new_init_subclass)
+    return baseclass
 
 
 def _validate_required_fields_for_subclass(subclass):

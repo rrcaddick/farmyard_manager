@@ -11,7 +11,7 @@ from model_utils.models import SoftDeletableModel
 from model_utils.models import TimeStampedModel
 
 from farmyard_manager.core.decorators import required_field
-from farmyard_manager.core.decorators import requires_fields
+from farmyard_manager.core.decorators import requires_child_fields
 from farmyard_manager.core.fields import SnakeCaseForeignKey
 from farmyard_manager.core.models import CustomCreatedTimeStampedModel
 from farmyard_manager.core.models import UUIDModelMixin
@@ -114,7 +114,7 @@ class ReEntryItemEditHistory(BaseEditHistory, models.Model):
         db_table = "entrance_re_entry_item_edit_history"
 
 
-@requires_fields
+@requires_child_fields
 class BaseItem(
     UUIDModelMixin,
     CustomCreatedTimeStampedModel,
@@ -233,7 +233,7 @@ class BaseItem(
             return self
 
 
-@requires_fields
+@requires_child_fields
 class BaseEntranceRecord(
     UUIDRefNumberModelMixin,
     CustomCreatedTimeStampedModel,
