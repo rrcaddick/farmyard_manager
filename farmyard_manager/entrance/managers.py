@@ -1,3 +1,5 @@
+# Entrance app managers
+
 from typing import TYPE_CHECKING
 
 from django.db import models
@@ -18,15 +20,7 @@ class TicketManager(SoftDeletableManager, models.Manager):
         # TODO: Implement price validation logic
         return True
 
-    def create_queue_ticket(
-        self,
-        status: str,
-        vehicle: "Vehicle",
-        performed_by: "User",
-        ticket_number: int | None = None,
-        **kwargs,
-    ):
-        """Create a ticket with correct price and initial status."""
+    def create_ticket(self, status, vehicle, performed_by, ref_number=None, **kwargs):
         if performed_by is None:
             error_message = "performed_by is required for new tickets"
             raise ValueError(error_message)
@@ -38,16 +32,14 @@ class TicketManager(SoftDeletableManager, models.Manager):
                 **kwargs,
             }
 
-            if ticket_number is not None:
-                ticket_data["ticket_number"] = ticket_number
+            if ref_number is not None:
+                ticket_data["ref_number"] = ref_number
 
             ticket = self.model(**ticket_data)
             ticket.save()
 
-            ticket.add_initial_status(
-                status=status,
-                performed_by=performed_by,
-            )
+            # Creates initial status history entry
+            ticket.add_create_status(performed_by=performed_by)
 
             return ticket
 

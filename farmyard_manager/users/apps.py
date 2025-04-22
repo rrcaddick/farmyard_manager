@@ -10,4 +10,4 @@ class UsersConfig(AppConfig):
 
     def ready(self):
         with contextlib.suppress(ImportError):
-            import farmyard_manager.users.signals  # noqa: F401
+            pass
