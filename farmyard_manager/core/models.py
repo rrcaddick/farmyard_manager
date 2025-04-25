@@ -1,11 +1,14 @@
 import uuid
 import uuid as uuid_lib
 
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db import models
 from django.utils import timezone
 from django_extensions.db.models import TimeStampedModel
 
+from farmyard_manager.core.decorators import required_field
+from farmyard_manager.core.decorators import requires_child_fields
 from farmyard_manager.utils.uuid_utils import get_unique_ref
 
 
@@ -103,7 +106,7 @@ class UUIDRefNumberModelMixin(UUIDModelMixin, models.Model):
 
 
 class RequiredFieldsAbstractModelMixin:
-    required_fields = {}  # Format: {field_name: expected_type}
+    required_fields: dict[str, type] = {}
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -145,3 +148,41 @@ class RequiredFieldsAbstractModelMixin:
         if type_errors:
             error_message = f"{cls.__name__} has type errors: {'; '.join(type_errors)}"
             raise TypeError(error_message)
+
+
+@requires_child_fields
+class TransitionTextChoices(models.TextChoices):
+    @required_field
+    @classmethod
+    def transitions_map(cls):
+        return dict  # type of required transitions_map
+
+    @classmethod
+    def validate_choice_transition(cls, prev_choice, new_choice):
+        prev_val = prev_choice.value if isinstance(prev_choice, cls) else prev_choice
+        new_val = new_choice.value if isinstance(new_choice, cls) else new_choice
+
+        allowed = cls.transitions_map().get(prev_val, [])
+        if new_val not in allowed:
+            error_message = (
+                f"Invalid transition from '{prev_val}' to '{new_val}'. "
+                f"Allowed: {allowed or 'none'}"
+            )
+            raise ValidationError(error_message)
+
+
+class CleanBeforeSaveModel(models.Model):
+    """
+    Base model that enforces full_clean() before saving.
+
+    Pass clean=False to bypass validation, e.g., for trusted backfill operations.
+    """
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, clean=True, **kwargs):
+        if clean:
+            # Call full_clean to validate the model before saving
+            self.full_clean()
+        return super().save(*args, **kwargs)

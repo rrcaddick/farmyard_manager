@@ -25,6 +25,7 @@ strict_optional = true
 plugins = [
     "mypy_django_plugin.main",
     "mypy_drf_plugin.main",
+    "extended_mypy_django_plugin.main",
 ]
 
 [[tool.mypy.overrides]]

@@ -1,13 +1,26 @@
 def required_field(field):
     """
-    Decorator to mark a field as required.
-    The type will be determined from type annotations.
+    Marks a method, property, or classmethod as a required field for subclasses.
 
-    Usage:
+    This decorator is used with @requires_child_fields to enforce that subclasses
+    must override this field. It works on:
+
+      - Class attributes with type annotations
+      - @property methods (instance-level)
+      - @classmethod methods (class-level)
+
+    In the base class, define the field with this decorator and return
+    the expected type class reference (e.g., `return dict`)
+
+    Example usage:
         @required_field
-        item_model: BaseItem
+        @classmethod
+        def transitions_map(cls) -> dict:
+            \"\"\"Should return a dictionary of allowed status transitions.\"\"\"
+            return dict  # placeholder to support type validation
     """
-    field.is_required_field = True  # Using a public attribute instead of _private
+    func = getattr(field, "fget", field)  # fget for @property, fallback otherwise
+    func.is_required_field = True
     return field
 
 
