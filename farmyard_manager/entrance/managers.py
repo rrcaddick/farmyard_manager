@@ -1,5 +1,4 @@
 # Entrance app managers
-
 from typing import TYPE_CHECKING
 
 from django.db import models
@@ -91,19 +90,13 @@ class ReEntryManager(models.Manager):
         created_by: "User",
         **kwargs,
     ):
-        if ticket.status not in [
-            ticket.StatusChoices.PAID,
-            ticket.StatusChoices.GROUP_ENTRY_PROCESSED,
-            ticket.StatusChoices.SCHOOL_ENTRY_PROCESSED,
-            ticket.StatusChoices.ONLINE_ENTRY_PROCESSED,
-        ]:
-            error_message = "Cannot issue Re-Emntry on un processed tickets"
+        if not ticket.is_processed:
+            error_message = "Cannot issue Re-Entry on un processed tickets"
             raise ValueError(error_message)
 
         re_entry = self.model(
             ticket=ticket,
             visitors_left=visitors_left,
-            created_by=created_by,
             **kwargs,
         )
 

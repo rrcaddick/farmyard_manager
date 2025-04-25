@@ -188,7 +188,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='reentry',
             name='payment',
-            field=farmyard_manager.core.fields.SnakeCaseForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='payments.payment'),
+            field=farmyard_manager.core.fields.SnakeCaseFK(null=True, on_delete=django.db.models.deletion.PROTECT, to='payments.payment'),
         ),
         migrations.AddField(
             model_name='reentry',
@@ -208,7 +208,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='ticket',
             name='payment',
-            field=farmyard_manager.core.fields.SnakeCaseForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='payments.payment'),
+            field=farmyard_manager.core.fields.SnakeCaseFK(null=True, on_delete=django.db.models.deletion.PROTECT, to='payments.payment'),
         ),
         migrations.AlterField(
             model_name='ticket',
@@ -222,7 +222,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='reentryitem',
             name='created_by',
-            field=farmyard_manager.core.fields.SnakeCaseForeignKey(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL),
+            field=farmyard_manager.core.fields.SnakeCaseFK(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL),
         ),
         migrations.AddField(
             model_name='reentryitem',
@@ -232,7 +232,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='reentryitemedithistory',
             name='performed_by',
-            field=farmyard_manager.core.fields.SnakeCaseForeignKey(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL),
+            field=farmyard_manager.core.fields.SnakeCaseFK(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL),
         ),
         migrations.AddField(
             model_name='reentryitemedithistory',
@@ -242,7 +242,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='reentrystatushistory',
             name='performed_by',
-            field=farmyard_manager.core.fields.SnakeCaseForeignKey(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL),
+            field=farmyard_manager.core.fields.SnakeCaseFK(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL),
         ),
         migrations.AddField(
             model_name='reentrystatushistory',
@@ -252,7 +252,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='ticketitem',
             name='created_by',
-            field=farmyard_manager.core.fields.SnakeCaseForeignKey(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL),
+            field=farmyard_manager.core.fields.SnakeCaseFK(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL),
         ),
         migrations.AddField(
             model_name='ticketitem',
@@ -262,7 +262,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='ticketitemedithistory',
             name='performed_by',
-            field=farmyard_manager.core.fields.SnakeCaseForeignKey(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL),
+            field=farmyard_manager.core.fields.SnakeCaseFK(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL),
         ),
         migrations.AddField(
             model_name='ticketitemedithistory',
@@ -272,7 +272,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='ticketstatushistory',
             name='performed_by',
-            field=farmyard_manager.core.fields.SnakeCaseForeignKey(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL),
+            field=farmyard_manager.core.fields.SnakeCaseFK(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL),
         ),
         migrations.AddField(
             model_name='ticketstatushistory',
