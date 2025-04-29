@@ -7,8 +7,6 @@ from django.db import models
 from django.utils import timezone
 from django_extensions.db.models import TimeStampedModel
 
-from farmyard_manager.core.decorators import required_field
-from farmyard_manager.core.decorators import requires_child_fields
 from farmyard_manager.utils.uuid_utils import get_unique_ref
 
 
@@ -49,20 +47,21 @@ class UUIDRefNumberModelMixin(UUIDModelMixin, models.Model):
 
     def save(self, *args, **kwargs):
         # Initial assignment of ref_number
-        self.ref_number = get_unique_ref(self.uuid)
+        self.ref_number = kwargs.pop("ref_number", get_unique_ref(self.uuid))
+
+        retries = kwargs.pop("retries", 5)
 
         try:
             return super().save(*args, **kwargs)
         except IntegrityError as e:
             # Let retry_ref_number_save handle the constraint check
-            return self.retry_ref_number_save(5, e, *args, **kwargs)
+            return self.retry_ref_number_save(e, *args, retries=retries, **kwargs)
 
     def _is_ref_constraint(self, error):
         """
         Check if an IntegrityError is due to the ref_number constraint violation.
         """
         duplicate_error_code = 1062
-        ref_constraint_name = "ref_number_unique_constraint"
 
         if not hasattr(error, "__cause__") or not error.__cause__:
             return False
@@ -76,9 +75,9 @@ class UUIDRefNumberModelMixin(UUIDModelMixin, models.Model):
             return False
 
         error_message = str(db_error)
-        return ref_constraint_name in error_message
+        return ".ref_number" in error_message
 
-    def retry_ref_number_save(self, retries, error, *args, **kwargs):
+    def retry_ref_number_save(self, error, *args, retries, **kwargs):
         # Check if this is our specific constraint violation
         if not self._is_ref_constraint(error):
             # If it's not our constraint, re-raise the original error
@@ -86,7 +85,9 @@ class UUIDRefNumberModelMixin(UUIDModelMixin, models.Model):
 
         # Check retries count
         if retries <= 0:
-            error_message = "Failed to generate a unique ref number after 5 retries."
+            error_message = (
+                f"Failed to generate a unique ref number after {retries} retries."
+            )
             raise IntegrityError(error_message)
 
         # Generate new values
@@ -105,70 +106,25 @@ class UUIDRefNumberModelMixin(UUIDModelMixin, models.Model):
             )
 
 
-class RequiredFieldsAbstractModelMixin:
-    required_fields: dict[str, type] = {}
-
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-
-        # Skip validation for abstract models
-        if hasattr(cls, "Meta") and getattr(cls.Meta, "abstract", False):
-            return
-
-        # Skip validation if no requirements defined
-        if not hasattr(cls, "required_fields") or not cls.required_fields:
-            return
-
-        # Check for required fields and their types
-        missing = []
-        type_errors = []
-
-        for field_name, expected_type in cls.required_fields.items():
-            # Check if field exists
-            if not hasattr(cls, field_name):
-                missing.append(field_name)
-                continue
-
-            # Check field type
-            field_value = getattr(cls, field_name)
-            if field_value is not None and isinstance(expected_type, type):
-                if not issubclass(field_value, expected_type):
-                    type_errors.append(
-                        f"{field_name} must be a subclass of {expected_type.__name__}, "
-                        f"got {field_value.__name__}",
-                    )
-
-        # Raise appropriate errors
-        if missing:
-            error_message = (
-                f"{cls.__name__} must define class attributes: {', '.join(missing)}"
-            )
-            raise NotImplementedError(error_message)
-
-        if type_errors:
-            error_message = f"{cls.__name__} has type errors: {'; '.join(type_errors)}"
-            raise TypeError(error_message)
-
-
-@requires_child_fields
 class TransitionTextChoices(models.TextChoices):
-    @required_field
     @classmethod
-    def transitions_map(cls):
-        return dict  # type of required transitions_map
+    def get_transition_map(cls) -> dict:
+        raise NotImplementedError
 
     @classmethod
     def validate_choice_transition(cls, prev_choice, new_choice):
         prev_val = prev_choice.value if isinstance(prev_choice, cls) else prev_choice
         new_val = new_choice.value if isinstance(new_choice, cls) else new_choice
 
-        allowed = cls.transitions_map().get(prev_val, [])
+        allowed = cls.get_transition_map().get(prev_val, [])
         if new_val not in allowed:
             error_message = (
                 f"Invalid transition from '{prev_val}' to '{new_val}'. "
                 f"Allowed: {allowed or 'none'}"
             )
             raise ValidationError(error_message)
+
+        return True
 
 
 class CleanBeforeSaveModel(models.Model):

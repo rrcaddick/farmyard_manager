@@ -19,7 +19,7 @@ class TicketStatusChoices(TransitionTextChoices):
     REFUNDED = ("refunded", "Ticket Refunded")
 
     @classmethod
-    def transitions_map(cls) -> dict:
+    def get_transition_map(cls) -> dict:
         return {
             cls.PENDING_SECURITY: [cls.PASSED_SECURITY],
             cls.PASSED_SECURITY: [cls.COUNTED],
@@ -36,7 +36,7 @@ class ReEntryStatusChoices(TransitionTextChoices):
     REFUNDED = ("refunded", "Re-Entry Refunded")
 
     @classmethod
-    def transitions_map(cls) -> dict:
+    def get_transition_map(cls) -> dict:
         return {
             cls.PENDING: [cls.PENDING_PAYMENT, cls.PROCESSED],
             cls.PENDING_PAYMENT: [cls.PROCESSED],

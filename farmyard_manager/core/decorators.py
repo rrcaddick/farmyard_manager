@@ -1,119 +1,143 @@
-def required_field(field):
+from contextlib import suppress
+from typing import get_origin
+
+from django.core.exceptions import FieldDoesNotExist
+from django.db.models.signals import class_prepared
+from django.dispatch import receiver
+
+
+def required_field(func):
     """
-    Marks a method, property, or classmethod as a required field for subclasses.
-
-    This decorator is used with @requires_child_fields to enforce that subclasses
-    must override this field. It works on:
-
-      - Class attributes with type annotations
-      - @property methods (instance-level)
-      - @classmethod methods (class-level)
-
-    In the base class, define the field with this decorator and return
-    the expected type class reference (e.g., `return dict`)
-
-    Example usage:
-        @required_field
-        @classmethod
-        def transitions_map(cls) -> dict:
-            \"\"\"Should return a dictionary of allowed status transitions.\"\"\"
-            return dict  # placeholder to support type validation
+    Marks a method as a required class-level field for subclasses.
+    Automatically wraps it as a @classmethod if it's not already.
     """
-    func = getattr(field, "fget", field)  # fget for @property, fallback otherwise
-    func.is_required_field = True
-    return field
+    if not isinstance(func, classmethod):
+        func = classmethod(func)
+
+    real_func = getattr(func, "__func__", func)
+    real_func.is_required_field = True
+    return func
 
 
 def requires_child_fields(baseclass):
-    """
-    Class decorator that validates required fields in subclasses.
-
-    Usage:
-        @validate_required_fields
-        class BaseModel(models.Model):
-            @required_field
-            item_model: BaseItem
-    """
+    """Marks a class to require field validation later."""
 
     def new_init_subclass(subclass, **kwargs):
-        # Safely call the original __init_subclass__, if it exists
         super(baseclass, subclass).__init_subclass__(**kwargs)
 
-        # Skip validation for abstract models
         if hasattr(subclass, "Meta") and getattr(subclass.Meta, "abstract", False):
             return
 
-        # Breaking up complexity into smaller functions
-        _validate_required_fields_for_subclass(subclass)
+        subclass.requires_child_fields_validation = True
 
-    # Replace the __init_subclass__ method
     baseclass.__init_subclass__ = classmethod(new_init_subclass)
     return baseclass
 
 
 def _validate_required_fields_for_subclass(subclass):
-    """Handles the validation of required fields for a subclass."""
-    # Collect required fields from annotations and decorators
+    """Validates that required fields are properly implemented."""
     required_fields = _collect_required_fields(subclass)
 
-    # Skip if no requirements
     if not required_fields:
         return
 
-    # Validate fields
     missing, type_errors = _check_field_requirements(subclass, required_fields)
 
-    # Raise appropriate errors
     _raise_validation_errors(subclass, missing, type_errors)
 
 
 def _collect_required_fields(cls):
-    """Collects required fields and their expected types from a class."""
+    """Collects all required fields from parent classes."""
     required_fields = {}
 
-    # Check class attributes for the marker
-    for attr_name, attr_value in cls.__dict__.items():
-        if hasattr(attr_value, "is_required_field"):
-            # Get type from annotations
-            field_type = None
-            if hasattr(cls, "__annotations__"):
-                field_type = cls.__annotations__.get(attr_name)
-            required_fields[attr_name] = field_type
+    for base in cls.__mro__[1:]:
+        for attr_name in dir(base):
+            if attr_name.startswith("__"):
+                continue
+
+            attr_descriptor = getattr(base.__class__, attr_name, None) or getattr(
+                base,
+                attr_name,
+                None,
+            )
+
+            func = None
+            if isinstance(attr_descriptor, property):
+                func = attr_descriptor.fget
+            elif isinstance(attr_descriptor, classmethod):
+                func = attr_descriptor.__func__
+            elif callable(attr_descriptor):
+                func = attr_descriptor
+
+            if func and getattr(func, "is_required_field", False):
+                field_type = func.__annotations__.get("return", None)
+                required_fields[attr_name] = field_type
 
     return required_fields
 
 
 def _check_field_requirements(cls, required_fields):
-    """Checks for missing fields and type errors."""
+    """Simplified checks for classmethod-based required fields."""
     missing = []
     type_errors = []
 
     for field_name, expected_type in required_fields.items():
-        # Check if field exists
-        if not hasattr(cls, field_name):
+        origin = get_origin(expected_type) or expected_type
+
+        with suppress(FieldDoesNotExist, AttributeError):
+            field = cls._meta.get_field(field_name)
+            if not isinstance(field, origin):
+                msg = (
+                    f"{field_name} must be an instance of {origin.__name__}, "
+                    f"got {type(field).__name__}"
+                )
+                type_errors.append(msg)
+            continue
+
+        attr = getattr(cls, field_name, None)
+        if attr is None:
             missing.append(field_name)
             continue
 
-        # Check field type
-        field_value = getattr(cls, field_name)
-        if field_value is not None and isinstance(expected_type, type):
-            if not issubclass(field_value, expected_type):
-                type_errors.append(
-                    f"{field_name} must be a subclass of {expected_type.__name__}, "
-                    f"got {field_value.__name__}",
+        # Check if still using the unimplemented @required_field
+        origin_func = getattr(attr, "__func__", attr)
+        if getattr(origin_func, "is_required_field", False):
+            missing.append(field_name)
+            continue
+
+        if isinstance(attr, type):
+            if not issubclass(attr, origin):
+                msg = (
+                    f"{field_name} must be a subclass of {origin.__name__}, "
+                    f"got {attr.__name__}"
                 )
+                type_errors.append(msg)
+        elif not isinstance(attr, origin):
+            msg = (
+                f"{field_name} must be an instance of {origin.__name__}, "
+                f"got {type(attr).__name__}"
+            )
+            type_errors.append(msg)
 
     return missing, type_errors
 
 
 def _raise_validation_errors(cls, missing, type_errors):
-    """Raises appropriate exceptions for validation errors."""
+    """Raises exceptions if missing fields or type errors."""
     if missing:
         error_message = (
-            f"{cls.__name__} must define class attributes: {', '.join(missing)}"
+            f"{cls.__name__} must define class attributes: {', '.join(missing)}",
         )
         raise NotImplementedError(error_message)
 
     if type_errors:
         error_message = f"{cls.__name__} has type errors: {'; '.join(type_errors)}"
         raise TypeError(error_message)
+
+
+# Allows django fields to be validated as well.
+@receiver(class_prepared)
+def validate_model(sender, **kwargs):
+    """Runs after a model class is fully constructed."""
+    if getattr(sender, "requires_child_fields_validation", False):
+        _validate_required_fields_for_subclass(sender)

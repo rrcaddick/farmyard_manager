@@ -155,10 +155,9 @@ class BaseItem(
             f"{self.item_type} is not a valid item type",
         )
 
-    @property
     @required_field
-    def edit_history_model(self):
-        return BaseEditHistory
+    def edit_history_model(self) -> BaseEditHistory:
+        raise NotImplementedError
 
     @property
     def amount_due(self):
@@ -254,20 +253,17 @@ class BaseEntranceRecord(
     def __str__(self):
         return f"{self.ref_number} - {self.status}"
 
-    @property
     @required_field
-    def status(self):
-        return models.CharField
+    def status() -> models.CharField:
+        raise NotImplementedError
 
-    @property
     @required_field
-    def item_model(self):
-        return BaseItem
+    def item_model() -> BaseItem:
+        raise NotImplementedError
 
-    @property
     @required_field
-    def status_history_model(self):
-        return BaseStatusHistory
+    def status_history_model() -> BaseStatusHistory:
+        raise NotImplementedError
 
     @property
     def snake_case_model_name(self):
