@@ -12,7 +12,15 @@ def to_snake_case(
     suffix: str = "",
     pluralize: bool = False,
 ) -> str:
-    snake_case_string = re.sub(r"(?<!^)(?=[A-Z])", "_", string).lower()
+    prefix = "" if prefix is None else prefix
+    suffix = "" if suffix is None else suffix
+    pluralize = False if pluralize is None else pluralize
+
+    # Add underscore before uppercase letters (except the first one)
+    snake_case_string = re.sub(r"(?<!^)(?=[A-Z])", "_", string.strip()).lower()
+
+    # Replace special characters and spaces with underscores
+    snake_case_string = re.sub(r"[^a-zA-Z0-9]+", "_", snake_case_string)
 
     snake_case = (
         f"{prefix}_{snake_case_string}_{suffix}"

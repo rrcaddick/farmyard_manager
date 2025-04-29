@@ -9,3 +9,5 @@ def validate_text_choice(
 ) -> None:
     if value not in [choice.value for choice in choices]:
         raise ValidationError(error_message)
+
+    return True
