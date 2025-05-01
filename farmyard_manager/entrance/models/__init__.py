@@ -1,5 +1,3 @@
-from .enums import ReEntryStatusChoices
-from .enums import TicketStatusChoices
 from .pricing import Pricing
 from .re_entry import ReEntry
 from .re_entry import ReEntryItem
@@ -15,11 +13,9 @@ __all__ = [
     "ReEntry",
     "ReEntryItem",
     "ReEntryItemEditHistory",
-    "ReEntryStatusChoices",
     "ReEntryStatusHistory",
     "Ticket",
     "TicketItem",
     "TicketItemEditHistory",
-    "TicketStatusChoices",
     "TicketStatusHistory",
 ]

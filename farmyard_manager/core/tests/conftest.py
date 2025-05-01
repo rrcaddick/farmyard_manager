@@ -1,6 +1,6 @@
 import pytest
 
-from .factory import FakeModelFactory
+from .factories import FakeModelFactory
 
 
 @pytest.fixture
