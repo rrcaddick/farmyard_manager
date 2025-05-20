@@ -27,7 +27,6 @@ class PricingFactory(DjangoModelFactory[Pricing]):
 
     class Meta:
         model = Pricing
-        django_get_or_create = ("ticket_item_type", "is_active")
 
 
 class TicketFactory(DjangoModelFactory[Ticket]):

@@ -39,6 +39,22 @@ class Pricing(UUIDModelMixin, TimeStampedModel, CleanBeforeSaveModel, models.Mod
         return f"{self.ticket_item_type} - {self.price}"
 
     def clean(self):
+        if self.is_active:
+            exists = (
+                Pricing.objects.filter(
+                    ticket_item_type=self.ticket_item_type,
+                    is_active=True,
+                )
+                .exclude(pk=self.pk)
+                .exists()
+            )
+
+            if exists:
+                error_message = (
+                    f"An active pricing already exists for {self.ticket_item_type}"
+                )
+                raise ValidationError(error_message)
+
         # Check for overlapping date ranges
         overlaps = Pricing.objects.filter(
             ticket_item_type=self.ticket_item_type,
@@ -58,11 +74,11 @@ class Pricing(UUIDModelMixin, TimeStampedModel, CleanBeforeSaveModel, models.Mod
             raise ValidationError(error_message)
 
     @staticmethod
-    def get_price(ticket_item_type: str, date_time=None):
+    def get_price(ticket_item_type: str, *, date_time=None, is_active=True):
         # Base query parameters
         query_params = {
             "ticket_item_type": ticket_item_type,
-            "is_active": True,
+            "is_active": is_active,
         }
 
         # Add date filters if date_time is provided
