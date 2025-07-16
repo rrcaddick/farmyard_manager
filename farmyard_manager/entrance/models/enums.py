@@ -18,9 +18,12 @@ class TicketStatusChoices(TransitionTextChoices):
     PROCESSED = ("processed", "Processed")
     REFUNDED = ("refunded", "Ticket Refunded")
 
+    # TODO: Look into this setting "": [cls.PENDING_SECURITY], transition
+    # through user input
     @classmethod
     def get_transition_map(cls) -> dict:
         return {
+            "": [cls.PENDING_SECURITY],
             cls.PENDING_SECURITY: [cls.PASSED_SECURITY],
             cls.PASSED_SECURITY: [cls.COUNTED],
             cls.COUNTED: [cls.PROCESSED],

@@ -33,14 +33,15 @@ class TicketManager(SoftDeletableManager["Ticket"], models.Manager["Ticket"]):
 
             ticket = self.model(**ticket_data)
 
+            save_kwargs = {} if ref_number is None else {"ref_number": ref_number}
+            ticket.save(**save_kwargs)
+
             ticket.status_history_model.objects.create(
                 ticket=ticket,
                 prev_status="",
                 new_status=status,
                 performed_by=performed_by,
             )
-
-            ticket.save()
 
             return ticket
 

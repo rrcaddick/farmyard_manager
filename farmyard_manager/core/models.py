@@ -39,7 +39,8 @@ class UUIDRefNumberModelMixin(UUIDModelMixin, models.Model):
 
     def save(self, *args, **kwargs):
         # Initial assignment of ref_number
-        self.ref_number = kwargs.pop("ref_number", get_unique_ref(self.uuid))
+        custom_ref = kwargs.pop("ref_number", None)
+        self.ref_number = custom_ref if custom_ref else get_unique_ref(self.uuid)
 
         retries = kwargs.pop("retries", 5)
 
