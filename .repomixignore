@@ -1,0 +1,41 @@
+# Bytecode, caches
+__pycache__/
+*.py[cod]
+
+# Virtualenv and env
+.venv/
+env/
+*.env
+
+# Migrations and DBs
+*/migrations/
+*.sqlite3
+
+# Static/media/temp files
+static/
+media/
+*.log
+
+# IDE/configs
+.idea/
+.vscode/
+
+# Git metadata
+.git/
+.gitignore
+
+# Docs
+*.md
+
+# Django stuff
+.github/
+.mypy_cache/
+.mypy_scratch/
+.pytest_cache/
+.ruff_cache/
+config/
+docs/
+locale/
+node_modules/
+utility/
+webpack/

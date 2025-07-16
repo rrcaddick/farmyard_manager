@@ -1,16 +1,13 @@
 # ruff: noqa: N806
 import uuid
-from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from django.utils import timezone
 
 from farmyard_manager.core.models import BaseModelMixin
 from farmyard_manager.core.models import CleanBeforeSaveModel
-from farmyard_manager.core.models import CustomCreatedTimeStampedModel
 from farmyard_manager.core.models import TransitionTextChoices
 from farmyard_manager.core.models import UUIDModelMixin
 from farmyard_manager.core.models import UUIDRefNumberModelMixin
@@ -27,27 +24,6 @@ class TestBaseModelMixin:
         FakeModel, _ = fake_model_factory(base_class=BaseModelMixin, create_in_db=True)
         instance = FakeModel.objects.create()
         assert instance.is_new() is False
-
-
-@pytest.mark.django_db(transaction=True)
-class TestCustomCreatedTimeStampedModel:
-    def test_created_field(self, fake_model_factory):
-        FakeModel, _ = fake_model_factory(
-            base_class=CustomCreatedTimeStampedModel,
-            create_in_db=True,
-        )
-        instance = FakeModel.objects.create()
-        assert instance.created is not None
-
-    def test_created_field_override(self, fake_model_factory):
-        created = timezone.make_aware(datetime(2023, 1, 1, 10, 30))  # noqa: DTZ001
-
-        FakeModel, _ = fake_model_factory(
-            base_class=CustomCreatedTimeStampedModel,
-            create_in_db=True,
-        )
-        instance = FakeModel.objects.create(created=created)
-        assert instance.created == created
 
 
 class TestUUIDModelMixin:

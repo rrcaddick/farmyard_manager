@@ -1,4 +1,5 @@
-# ruff: noqa
+# ruff: noqa: E402, ERA001
+
 """
 ASGI config for Farmyard Manager project.
 

@@ -1,4 +1,7 @@
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
 from model_utils.models import TimeStampedModel
 
@@ -17,7 +20,11 @@ class Pricing(UUIDModelMixin, TimeStampedModel, CleanBeforeSaveModel, models.Mod
         db_index=True,
     )
 
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
 
     price_start = models.DateTimeField()
 

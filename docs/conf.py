@@ -1,4 +1,4 @@
-# ruff: noqa
+# ruff: noqa: I001, ERA001
 # Configuration file for the Sphinx documentation builder.
 #
 # This file only contains a selection of the most common options. For a full
@@ -12,15 +12,16 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
 import os
+from pathlib import Path
 import sys
 import django
 
-if os.getenv("READTHEDOCS", default=False) == "True":
-    sys.path.insert(0, os.path.abspath(".."))
+if os.getenv("READTHEDOCS", default="False") == "True":
+    sys.path.insert(0, str(Path("..").resolve()))
     os.environ["DJANGO_READ_DOT_ENV_FILE"] = "True"
     os.environ["USE_DOCKER"] = "no"
 else:
-    sys.path.insert(0, os.path.abspath(".."))
+    sys.path.insert(0, str(Path("..").resolve()))
 os.environ["DATABASE_URL"] = "sqlite:///readthedocs.db"
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
 django.setup()
@@ -28,7 +29,7 @@ django.setup()
 # -- Project information -----------------------------------------------------
 
 project = "Farmyard Manager"
-copyright = """2025, Ray Caddick"""
+copyright = """2025, Ray Caddick"""  # noqa: A001
 author = "Ray Caddick"
 
 

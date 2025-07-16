@@ -13,6 +13,7 @@ include = ["farmyard_manager/**"]
 omit = ["*/migrations/*", "*/tests/*"]
 plugins = ["django_coverage_plugin"]
 
+
 # ==== mypy ====
 [tool.mypy]
 python_version = "3.12"
@@ -35,6 +36,7 @@ ignore_errors = true
 
 [tool.django-stubs]
 django_settings_module = "config.settings.test"
+scratch_path = ".mypy_scratch"
 
 # ==== djLint ====
 [tool.djlint]
@@ -62,6 +64,8 @@ extend-exclude = [
     "*/migrations/*.py",
     "staticfiles/*",
 ]
+
+
 
 [tool.ruff.lint]
 select = [
@@ -105,7 +109,7 @@ select = [
   "TID",
   "TC",
   "INT",
-  # "ARG", # Unused function argument
+  "ARG",
   "PTH",
   "ERA",
   "PD",
@@ -119,6 +123,7 @@ select = [
   # "FURB",
   # "LOG",
   "RUF",
+  "ARG001"
 ]
 ignore = [
   "S101", # Use of assert detected https://docs.astral.sh/ruff/rules/assert/

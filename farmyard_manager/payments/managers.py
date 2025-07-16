@@ -1,7 +1,7 @@
 from django.db import models
 
 
-class PyamentManager(models.Manger):
+class PaymentManager(models.Manager):
     def create_payment(self):
         pass
 

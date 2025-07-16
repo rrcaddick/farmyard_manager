@@ -4,8 +4,7 @@ import uuid as uuid_lib
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db import models
-from django.utils import timezone
-from django_extensions.db.models import TimeStampedModel
+from model_utils.models import TimeStampedModel
 
 from farmyard_manager.utils.uuid_utils import get_unique_ref
 
@@ -16,13 +15,6 @@ class BaseModelMixin(models.Model):
 
     def is_new(self):
         return self.pk is None
-
-
-class CustomCreatedTimeStampedModel(TimeStampedModel, models.Model):
-    created = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        abstract = True
 
 
 class UUIDModelMixin(BaseModelMixin, TimeStampedModel, models.Model):

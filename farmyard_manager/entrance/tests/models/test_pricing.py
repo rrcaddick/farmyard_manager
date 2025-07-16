@@ -141,3 +141,12 @@ class TestPricingModel:
         )
         with pytest.raises(ValueError, match="No pricing found for"):
             Pricing.get_price(ticket_item_type, date_time=now)
+
+    def test_price_field_validation(self):
+        # Test negative prices
+        with pytest.raises(ValidationError):
+            PricingFactory.build(price=Decimal("-10.00")).full_clean()
+
+        # Test max digits (should be 10)
+        with pytest.raises(ValidationError):
+            PricingFactory.build(price=Decimal("123456789.90")).full_clean()

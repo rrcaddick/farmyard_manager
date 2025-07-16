@@ -31,7 +31,7 @@ class TestUserUpdateView:
         https://github.com/pytest-dev/pytest-django/pull/258
     """
 
-    def dummy_get_response(self, request: HttpRequest):
+    def dummy_get_response(self, request: HttpRequest):  # noqa: ARG002
         return None
 
     def test_get_success_url(self, user: User, rf: RequestFactory):

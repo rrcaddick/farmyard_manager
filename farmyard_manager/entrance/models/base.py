@@ -5,14 +5,15 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.db import transaction
 from model_utils.models import SoftDeletableModel
+from model_utils.models import TimeStampedModel
 
 from farmyard_manager.core.decorators import required_field
 from farmyard_manager.core.decorators import requires_child_fields
 from farmyard_manager.core.fields import SnakeCaseFK
 from farmyard_manager.core.models import CleanBeforeSaveModel
-from farmyard_manager.core.models import CustomCreatedTimeStampedModel
 from farmyard_manager.core.models import UUIDModelMixin
 from farmyard_manager.core.models import UUIDRefNumberModelMixin
+from farmyard_manager.utils.int_utils import is_int
 from farmyard_manager.utils.model_utils import validate_text_choice
 from farmyard_manager.utils.string_utils import to_snake_case
 
@@ -26,7 +27,10 @@ if TYPE_CHECKING:
     from farmyard_manager.users.models import User
 
 
-class BaseStatusHistory(UUIDModelMixin, CustomCreatedTimeStampedModel, models.Model):
+class BaseStatusHistory(UUIDModelMixin, TimeStampedModel, models.Model):
+    if TYPE_CHECKING:
+        objects: models.Manager
+
     performed_by = SnakeCaseFK(
         "users.User",
         on_delete=models.PROTECT,
@@ -35,22 +39,20 @@ class BaseStatusHistory(UUIDModelMixin, CustomCreatedTimeStampedModel, models.Mo
     class Meta:
         abstract = True
 
-    def __str__(self):
-        return (
-            f"Status {self.prev_status} → {self.new_status} for Ticket {self.ticket.id}"
-        )
-
-    def delete(self, *args, **kwargs):
+    def delete(self, *args, **kwargs):  # noqa: ARG002
         error_message = "Status change entries cannot be deleted"
         raise ValidationError(error_message)
 
 
 class BaseEditHistory(
     UUIDModelMixin,
-    CustomCreatedTimeStampedModel,
+    TimeStampedModel,
     CleanBeforeSaveModel,
     models.Model,
 ):
+    if TYPE_CHECKING:
+        objects: models.Manager
+
     ItemTypeChoices = ItemTypeChoices
 
     class FieldChoices(models.TextChoices):
@@ -63,9 +65,7 @@ class BaseEditHistory(
         db_index=True,
     )
 
-    prev_value = models.CharField(
-        max_length=255,
-    )
+    prev_value = models.CharField(max_length=255)
 
     new_value = models.CharField(max_length=255)
 
@@ -78,7 +78,7 @@ class BaseEditHistory(
         abstract = True
 
     def __str__(self):
-        return f"{self.field} edit by {self.performed_by}"
+        return f"{self.field} edited by {self.performed_by}"
 
     def clean(self):
         # Checks if the field is editable
@@ -96,19 +96,23 @@ class BaseEditHistory(
                 f"{self.new_value} is a valid item type",
             )
 
+            if self.prev_value == self.ItemTypeChoices.VOIDED:
+                error_message = "Voided items cannot be edited"
+                raise ValidationError(error_message)
+
         # Checks if the new value is a valid visitor count
         if self.field == self.FieldChoices.VISITOR_COUNT:
-            try:
+            if is_int(self.new_value):
                 new_visitor_count = int(self.new_value)
-            except (TypeError, ValueError) as err:
+            else:
                 error_message = "Visitor count must be a valid integer"
-                raise ValidationError(error_message) from err
+                raise ValidationError(error_message)
 
             if new_visitor_count < 1:
                 error_message = "Visitor count must be greater than 0"
                 raise ValidationError(error_message)
 
-    def delete(self, *args, **kwargs):
+    def delete(self, *args, **kwargs):  # noqa: ARG002
         error_message = "Edit history entries cannot be deleted"
         raise ValidationError(error_message)
 
@@ -116,7 +120,7 @@ class BaseEditHistory(
 @requires_child_fields
 class BaseItem(
     UUIDModelMixin,
-    CustomCreatedTimeStampedModel,
+    TimeStampedModel,
     SoftDeletableModel,
     CleanBeforeSaveModel,
     models.Model,
@@ -156,7 +160,7 @@ class BaseItem(
         )
 
     @required_field
-    def edit_history_model(self) -> BaseEditHistory:
+    def edit_history_model(self) -> type[BaseEditHistory]:
         raise NotImplementedError
 
     @property
@@ -231,7 +235,7 @@ class BaseItem(
 @requires_child_fields
 class BaseEntranceRecord(
     UUIDRefNumberModelMixin,
-    CustomCreatedTimeStampedModel,
+    TimeStampedModel,
     SoftDeletableModel,
     models.Model,
 ):
@@ -254,15 +258,19 @@ class BaseEntranceRecord(
         return f"{self.ref_number} - {self.status}"
 
     @required_field
-    def status() -> models.CharField:
+    def status(self) -> models.CharField:
+        raise NotImplementedError
+
+    @status.setter
+    def status(self):
         raise NotImplementedError
 
     @required_field
-    def item_model() -> BaseItem:
+    def item_model(self) -> type[BaseItem]:
         raise NotImplementedError
 
     @required_field
-    def status_history_model() -> BaseStatusHistory:
+    def status_history_model(self) -> type[BaseStatusHistory]:
         raise NotImplementedError
 
     @property
@@ -288,11 +296,12 @@ class BaseEntranceRecord(
 
     @property
     def voided_items(self):
-        return self.item_model.objects.all_with_deleted().filter(
+        return self.item_model.all_objects.all().filter(
             **{self.snake_case_model_name: self},
             is_removed=True,
         )
 
+    # TODO: Remove this method once test make use of manager method
     def add_create_status(self, performed_by: "User"):
         kwargs = {
             self.snake_case_model_name: self,
@@ -342,7 +351,7 @@ class BaseEntranceRecord(
         return self.item_model.objects.create(**kwargs)
 
     # TODO: Decide if this should have the item itself passed
-    def remove_item(self, item_id: int, performed_by: "User"):
+    def remove_item(self, item_id: int, performed_by: "User"):  # noqa: ARG002
         try:
             # Use the correct relation property name
             item = self.items.get(id=item_id)

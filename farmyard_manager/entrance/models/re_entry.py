@@ -93,8 +93,8 @@ class ReEntryStatusHistory(BaseStatusHistory, CleanBeforeSaveModel, models.Model
 
     def __str__(self):
         return (
-            f"Status {self.prev_status} → {self.new_status} "
-            f"for Ticket {self.re_entry.id}"
+            f"{self.performed_by}: {self.prev_status} → "
+            f"f{self.new_status}: {self.re_entry.ticket.id}"
         )
 
     def clean(self):

@@ -106,9 +106,11 @@ class TestRequiresChildFields:
                 assert instance.required_field == expected_value
 
     def test_required_field_marker(self):
-        @required_field
-        def some_method(cls):
+        @required_field  # type: ignore[misc]
+        def some_property():
             return "value"
 
-        assert hasattr(some_method.__func__, "is_required_field")
-        assert some_method.__func__.is_required_field is True
+        # During type checking required_field is an alisas for @property so it can be
+        # used on it's own, so is_required_field is not yet defined
+        assert hasattr(some_property.fget, "is_required_field")  # type: ignore[attr-defined]
+        assert some_property.fget.is_required_field is True  #  type: ignore[attr-defined]

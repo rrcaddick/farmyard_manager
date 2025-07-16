@@ -1,4 +1,3 @@
-# Entrance app managers
 from typing import TYPE_CHECKING
 
 from django.db import models
@@ -6,16 +5,14 @@ from django.db import transaction
 from model_utils.managers import SoftDeletableManager
 
 if TYPE_CHECKING:
-    from farmyard_manager.entrance.models import ReEntry
+    from farmyard_manager.entrance.models import ReEntry  # noqa: F401
     from farmyard_manager.entrance.models import Ticket
     from farmyard_manager.users.models import User
     from farmyard_manager.vehicles.models import Vehicle
 
 
-class TicketManager(SoftDeletableManager, models.Manager):
-    model: type["Ticket"]
-
-    def _validate_price(self, ticket_type):
+class TicketManager(SoftDeletableManager["Ticket"], models.Manager["Ticket"]):
+    def _validate_price(self, ticket_type):  # noqa: ARG002
         # TODO: Implement price validation logic
         return True
 
@@ -35,10 +32,15 @@ class TicketManager(SoftDeletableManager, models.Manager):
                 ticket_data["ref_number"] = ref_number
 
             ticket = self.model(**ticket_data)
-            ticket.save()
 
-            # Creates initial status history entry
-            ticket.add_create_status(performed_by=performed_by)
+            ticket.status_history_model.objects.create(
+                ticket=ticket,
+                prev_status="",
+                new_status=status,
+                performed_by=performed_by,
+            )
+
+            ticket.save()
 
             return ticket
 
@@ -80,14 +82,12 @@ class TicketManager(SoftDeletableManager, models.Manager):
         pass
 
 
-class ReEntryManager(models.Manager):
-    model: type["ReEntry"]
-
+class ReEntryManager(SoftDeletableManager["ReEntry"], models.Manager["ReEntry"]):
     def create_re_entry(
         self,
         ticket: "Ticket",
         visitors_left: int,
-        created_by: "User",
+        created_by: "User",  # noqa: ARG002
         **kwargs,
     ):
         if not ticket.is_processed:

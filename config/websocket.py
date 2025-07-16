@@ -1,4 +1,4 @@
-async def websocket_application(scope, receive, send):
+async def websocket_application(scope, receive, send):  # noqa: ARG001
     while True:
         event = await receive()
 

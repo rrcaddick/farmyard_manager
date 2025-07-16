@@ -1,8 +1,11 @@
+from typing import TYPE_CHECKING
+
 from django.core.exceptions import ValidationError
 from django.db import models
 
 from farmyard_manager.core.models import CleanBeforeSaveModel
 from farmyard_manager.entrance.managers import TicketManager
+from farmyard_manager.entrance.models.re_entry import ReEntry
 from farmyard_manager.utils.model_utils import validate_text_choice
 
 from .base import BaseEditHistory
@@ -10,7 +13,9 @@ from .base import BaseEntranceRecord
 from .base import BaseItem
 from .base import BaseStatusHistory
 from .enums import TicketStatusChoices
-from .re_entry import ReEntry
+
+if TYPE_CHECKING:
+    from farmyard_manager.users.models import User
 
 
 class TicketItemEditHistory(BaseEditHistory, models.Model):
@@ -157,7 +162,7 @@ class Ticket(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
     def pending_re_entries(self):
         return self.re_entries.filter(status="pending")
 
-    def add_re_entry(self, visitors_left: int):
+    def add_re_entry(self, visitors_left: int, created_by: "User"):
         if self.status != TicketStatusChoices.PROCESSED:
             error_message = "Only processed tickets can have re-entries"
             raise ValueError(error_message)
@@ -166,8 +171,9 @@ class Ticket(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
             error_message = "Visitors left must be greater than 0"
             raise ValueError(error_message)
 
-        return ReEntry.objects.create(
+        return ReEntry.objects.create_re_entry(
             ticket=self,
-            status=ReEntry.StatusChoices.PENDING,
             visitors_left=visitors_left,
+            created_by=created_by,
+            status=ReEntry.StatusChoices.PENDING,
         )

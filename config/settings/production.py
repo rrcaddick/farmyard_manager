@@ -1,5 +1,6 @@
 # ruff: noqa: E501
 import logging
+from typing import Any
 
 import sentry_sdk
 from sentry_sdk.integrations.celery import CeleryIntegration
@@ -111,7 +112,7 @@ INSTALLED_APPS += ["anymail"]
 # https://anymail.readthedocs.io/en/stable/installation/#anymail-settings-reference
 # https://anymail.readthedocs.io/en/stable/esps
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-ANYMAIL = {}
+ANYMAIL: dict[str, Any] = {}
 
 
 # LOGGING
@@ -178,7 +179,7 @@ sentry_sdk.init(
 # -------------------------------------------------------------------------------
 # Tools that generate code samples can use SERVERS to point to the correct domain
 SPECTACULAR_SETTINGS["SERVERS"] = [
-    {"url": "https://farmyardpark.co.za", "description": "Production server"},
+    {"url": "https://farmyardpark.co.za", "description": "Production server"},  # type: ignore[list-item]
 ]
 # Your stuff...
 # ------------------------------------------------------------------------------

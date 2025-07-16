@@ -79,7 +79,7 @@ ENV/
 
 # mypy
 .mypy_cache/
-
+.mypy_scratch/
 
 ### Node template
 # Logs
@@ -285,3 +285,6 @@ farmyard_manager/static/css/
 
 # Debug files
 .vscode/
+
+# Repomix Markdown Files
+*repomix*.md
