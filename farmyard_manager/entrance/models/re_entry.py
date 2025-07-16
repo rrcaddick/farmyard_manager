@@ -130,9 +130,9 @@ class ReEntry(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
 
     visitors_left = models.IntegerField()
 
-    visitors_returned = models.IntegerField(null=True)
+    visitors_returned = models.IntegerField(null=True, blank=True)
 
-    completed_time = models.DateTimeField(null=True)
+    completed_time = models.DateTimeField(null=True, blank=True)
 
     objects = ReEntryManager()
 

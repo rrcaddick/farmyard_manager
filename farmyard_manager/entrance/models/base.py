@@ -243,6 +243,7 @@ class BaseEntranceRecord(
         "payments.Payment",
         on_delete=models.PROTECT,
         null=True,
+        blank=True,
         pluralize_related_name=True,
     )  # type: ignore[misc]
 
