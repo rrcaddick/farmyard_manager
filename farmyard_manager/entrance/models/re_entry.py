@@ -156,10 +156,13 @@ class ReEntry(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
             )
 
     @property
-    def items_completed(self):
-        additional_visitors = self.visitors_left - (self.visitors_returned or 0)
-        added_items = sum(item.visitor_count for item in self.re_entry_items.all())
-        return additional_visitors - added_items == 0
+    def has_unpaid_visitors(self):
+        # Only count additional visitors if MORE people returned than left
+        additional_visitors = max(0, (self.visitors_returned or 0) - self.visitors_left)
+        added_visitor_count = sum(
+            item.visitor_count for item in self.re_entry_items.all()
+        )
+        return additional_visitors > added_visitor_count
 
     @property
     def is_processed(self):
