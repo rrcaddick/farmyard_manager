@@ -12,7 +12,7 @@ class VehicleFactory(DjangoModelFactory[Vehicle]):
     make = factory.Faker("company")
     model = factory.Faker("word")
     color = factory.Faker("color_name")
-    year = factory.Faker("year")
+    year = factory.Faker("pyint", min_value=1990, max_value=2025)
     plate_number = factory.Faker("license_plate")
     license_disc_data = factory.Dict({"valid_until": "2025-12-31"})
     security_fail_count = 0
