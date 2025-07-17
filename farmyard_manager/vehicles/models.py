@@ -4,11 +4,16 @@ from datetime import datetime
 from django.conf import settings
 from django.db import models
 from django.db import transaction
+from django.utils import timezone
 from model_utils.models import SoftDeletableModel
 from model_utils.models import TimeStampedModel
 
 from farmyard_manager.core.models import UUIDModelMixin
+from farmyard_manager.entrance.models.ticket import Ticket
 from farmyard_manager.users.models import User
+from farmyard_manager.vehicles.managers import BlacklistManager
+from farmyard_manager.vehicles.managers import SecurityFailManager
+from farmyard_manager.vehicles.managers import VehicleManager
 
 
 class Vehicle(UUIDModelMixin, SoftDeletableModel, TimeStampedModel, models.Model):
@@ -28,8 +33,36 @@ class Vehicle(UUIDModelMixin, SoftDeletableModel, TimeStampedModel, models.Model
 
     is_blacklisted = models.BooleanField(default=False)
 
+    objects: VehicleManager = VehicleManager()
+
     def __str__(self):
         return f"{self.make} {self.model} - {self.plate_number}"
+
+    def get_or_create_ticket(self, performed_by: User) -> Ticket:
+        """
+        Get today's ticket for this vehicle, create if doesn't exist
+        """
+        # Get ANY ticket from today, regardless of status
+        ticket = self.tickets.filter(
+            created__date=timezone.now().date(),
+        ).first()
+
+        if ticket:
+            return ticket
+
+        # Create new ticket if none exists and user has permission
+        current_shift = performed_by.get_current_shift()
+        if current_shift.can_create_tickets():
+            return Ticket.objects.create_ticket(
+                status=Ticket.StatusChoices.PENDING_SECURITY,
+                vehicle=self,
+                performed_by=performed_by,
+            )
+
+        error_message = f"Shift type '{current_shift.shift_type}' cannot create tickets"
+        raise PermissionError(
+            error_message,
+        )
 
     def add_security_fail(
         self,
@@ -57,7 +90,7 @@ class Vehicle(UUIDModelMixin, SoftDeletableModel, TimeStampedModel, models.Model
                     created_by=User.get_admin_user(),
                 )
 
-            self.save(update_fields=["security_fails", "is_blacklisted"])
+            self.save(update_fields=["security_fail_count", "is_blacklisted"])
 
     def blacklist_vehicle(
         self,
@@ -77,8 +110,13 @@ class Vehicle(UUIDModelMixin, SoftDeletableModel, TimeStampedModel, models.Model
         Blacklist.objects.create(**blacklist_fields)
 
     def unblacklist_vehicle(self):
-        with transaction.atomic(), suppress(Blacklist.DoesNotExist, AttributeError):
-            self.blacklist.delete()
+        with transaction.atomic():
+            # Try to delete the blacklist entry if it exists
+            with suppress(Blacklist.DoesNotExist, AttributeError):
+                self.blacklist.delete()
+
+            # Always update the vehicle status regardless of whether
+            # blacklist entry existed
             self.is_blacklisted = False
             self.save(update_fields=["is_blacklisted"])
 
@@ -111,7 +149,9 @@ class SecurityFail(UUIDModelMixin, TimeStampedModel, models.Model):
         blank=False,
     )
 
-    failure_date = models.DateTimeField(auto_now_add=True)
+    failure_date = models.DateTimeField(default=timezone.now)
+
+    objects: SecurityFailManager = SecurityFailManager()
 
     def __str__(self):
         return f"{self.failure_date} - {self.failure_type}"
@@ -148,6 +188,8 @@ class Blacklist(UUIDModelMixin, TimeStampedModel, models.Model):
         null=True,
         blank=False,
     )
+
+    objects: BlacklistManager = BlacklistManager()
 
     def __str__(self):
         return self.reason
