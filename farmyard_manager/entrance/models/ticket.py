@@ -130,7 +130,7 @@ class Ticket(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
         related_name="tickets",
     )
 
-    objects = TicketManager()
+    objects: TicketManager = TicketManager()
 
     class Meta:
         db_table = "entrance_tickets"

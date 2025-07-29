@@ -134,7 +134,7 @@ class ReEntry(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
 
     completed_time = models.DateTimeField(null=True, blank=True)
 
-    objects = ReEntryManager()
+    objects: ReEntryManager = ReEntryManager()
 
     class Meta:
         db_table = "entrance_re_entries"
