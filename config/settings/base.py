@@ -102,6 +102,7 @@ LOCAL_APPS = [
     "farmyard_manager.vehicles",
     "farmyard_manager.entrance",
     "farmyard_manager.payments",
+    "farmyard_manager.shifts",
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
