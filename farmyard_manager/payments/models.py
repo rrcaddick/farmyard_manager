@@ -176,14 +176,14 @@ class TransactionItem(UUIDModelMixin, TimeStampedModel, models.Model):
         related_name="transaction_items",
     )
 
-    created_by = models.ForeignKey(
-        "users.User",
+    shift = models.ForeignKey(
+        "shifts.Shift",
         on_delete=models.PROTECT,
         related_name="payments",
     )
 
-    shift = models.ForeignKey(
-        "shifts.Shift",
+    created_by = models.ForeignKey(
+        "users.User",
         on_delete=models.PROTECT,
         related_name="payments",
     )
@@ -194,15 +194,15 @@ class TransactionItem(UUIDModelMixin, TimeStampedModel, models.Model):
 
     cash_tendered = models.DecimalField(max_digits=10, decimal_places=2, null=True)
 
-    addpay_rrn = models.CharField(
-        max_length=255,
-        blank=True,
-    )
+    addpay_rrn = models.CharField(max_length=255, blank=True)
 
-    addpay_transaction_id = models.CharField(
-        max_length=255,
-        blank=True,
-    )
+    addpay_transaction_id = models.CharField(max_length=255, blank=True)
+
+    addpay_card_number = models.CharField(max_length=255, blank=True)
+
+    addpay_cardholder_name = models.CharField(max_length=255, blank=True)
+
+    addpay_response_data = models.JSONField(null=True, blank=True)
 
     class Meta:
         db_table = "payments_transaction_items"
@@ -213,6 +213,26 @@ class TransactionItem(UUIDModelMixin, TimeStampedModel, models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
+
+    @property
+    def is_cash_transaction(self):
+        return self.payment_type == self.PaymentTypeChoices.CASH
+
+    @property
+    def is_card_transaction(self):
+        return self.payment_type == self.PaymentTypeChoices.CARD
+
+    @property
+    def change_due(self):
+        if self.is_card_transaction:
+            error_message = "Change not possible on card payments"
+            raise ValueError(error_message)
+
+        if self.cash_tendered is None:
+            error_message = "Cash tendered is required to calculate change"
+            raise ValueError(error_message)
+
+        return self.cash_tendered - self.amount
 
     def clean(self):
         if self.payment_type not in [
@@ -239,17 +259,9 @@ class TransactionItem(UUIDModelMixin, TimeStampedModel, models.Model):
             )
             raise ValueError(error_message)
 
-    @property
-    def change_due(self):
-        if self.payment_type == self.PaymentTypeChoices.CARD:
-            error_message = "Change not possible on card payments"
-            raise ValueError(error_message)
-
-        if self.cash_tendered is None:
-            error_message = "Cash tendered is required to calculate change"
-            raise ValueError(error_message)
-
-        return self.cash_tendered - self.amount
+    def refund_transaction(self):
+        # TODO: Add method that marks as refunded. Might need to track status as well
+        pass
 
 
 class RefundStatusChoices(models.TextChoices):

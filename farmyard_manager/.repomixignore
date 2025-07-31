@@ -45,6 +45,6 @@ webpack/
 
 *migration*
 
-farmyard_manager/audit
-farmyard_manager/template
-farmyard_manager/static
+./audit
+./template
+./static
