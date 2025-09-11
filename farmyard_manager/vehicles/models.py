@@ -1,5 +1,6 @@
 from contextlib import suppress
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.db import models
@@ -10,13 +11,22 @@ from model_utils.models import TimeStampedModel
 
 from farmyard_manager.core.models import UUIDModelMixin
 from farmyard_manager.entrance.models.ticket import Ticket
+from farmyard_manager.entrance.models.ticket import TicketItem
 from farmyard_manager.users.models import User
 from farmyard_manager.vehicles.managers import BlacklistManager
 from farmyard_manager.vehicles.managers import SecurityFailManager
 from farmyard_manager.vehicles.managers import VehicleManager
 
+if TYPE_CHECKING:
+    from django.db.models import QuerySet
+
+    from farmyard_manager.entrance.models import ReEntryItem
+    from farmyard_manager.payments.models import Payment
+
 
 class Vehicle(UUIDModelMixin, SoftDeletableModel, TimeStampedModel, models.Model):
+    tickets: "QuerySet[Ticket]"
+
     make = models.CharField(max_length=50)
 
     model = models.CharField(max_length=50)
@@ -51,7 +61,7 @@ class Vehicle(UUIDModelMixin, SoftDeletableModel, TimeStampedModel, models.Model
             return ticket
 
         # Create new ticket if none exists and user has permission
-        current_shift = performed_by.get_current_shift()
+        current_shift = performed_by.get_active_shift()
         if current_shift.can_create_tickets():
             return Ticket.objects.create_ticket(
                 status=Ticket.StatusChoices.PENDING_SECURITY,
@@ -120,7 +130,44 @@ class Vehicle(UUIDModelMixin, SoftDeletableModel, TimeStampedModel, models.Model
             self.is_blacklisted = False
             self.save(update_fields=["is_blacklisted"])
 
+    def get_paid_item(
+        self,
+        payment: "Payment",
+    ) -> "TicketItem | ReEntryItem":
+        """Returns the entrance item that was covered by the payment"""
 
+        # TODO: Turn these in QuerySet filters
+        ticket = payment.tickets.filter(vehicle=self).first()
+        re_entry = payment.re_entries.filter(ticket__vehicle=self).first()
+
+        if ticket and re_entry:
+            error_message = (
+                "Multiple entrance items found for vehicle and payment. Invlaid state"
+            )
+            raise ValueError(error_message)
+
+        if not ticket and not re_entry:
+            error_message = (
+                "No entrance item found for vehicle and payment. "
+                "Vehicle likely belongs to another payment"
+            )
+            raise ValueError(error_message)
+
+        entrance_record = ticket if ticket else re_entry
+        assert entrance_record is not None
+
+        return entrance_record.payable_item
+
+    def linked_to_payment(self, payment: "Payment"):
+        try:
+            self.get_paid_item(payment)
+        except ValueError:
+            return False
+        else:
+            return True
+
+
+# TODO: Add process to cancel ticket if security chcek is failed without resolution
 class SecurityFail(UUIDModelMixin, TimeStampedModel, models.Model):
     class FailureChoices(models.TextChoices):
         ALCOHOL_POSSESSION = "alcohol_possession", "Alcohol Possession"

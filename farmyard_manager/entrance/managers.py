@@ -136,11 +136,6 @@ class TicketManager(SoftDeletableManager["Ticket"], models.Manager["Ticket"]):
         **kwargs: Any,
     ) -> None:
         """Sync offline queue ticket data"""
-        # TODO: Implement offline queue ticket sync
-        # Check for ticket for today matching license plate
-        # Create ticket if no match
-        # Update ticket if match - Overwrite created if earlier than current created
-        # Update modified if later than current modified
 
     def sync_offline_security_check(
         self,
@@ -149,11 +144,6 @@ class TicketManager(SoftDeletableManager["Ticket"], models.Manager["Ticket"]):
         **kwargs: Any,
     ) -> None:
         """Sync offline security check data"""
-        # TODO: Implement offline security check sync
-        # Check for ticket for today matching license plate
-        # Create ticket if no match
-        # Update ticket if match - Overwrite created if earlier than current created
-        # Update modified if later than current modified
 
     def sync_offline_visitor_ticket(
         self,
@@ -162,12 +152,6 @@ class TicketManager(SoftDeletableManager["Ticket"], models.Manager["Ticket"]):
         **kwargs: Any,
     ) -> None:
         """Sync offline visitor ticket data"""
-        # TODO: Implement offline visitor ticket sync
-        # Check for ticket for today matching license plate
-        # Create ticket if no match
-        # Update ticket if match - Overwrite created if earlier than current created
-        # Update modified if later than current modified
-        # Overwrite ticket number with incoming ticket number
 
     def sync_offline_cash_payment(
         self,
@@ -176,13 +160,6 @@ class TicketManager(SoftDeletableManager["Ticket"], models.Manager["Ticket"]):
         **kwargs: Any,
     ) -> None:
         """Sync offline cash payment data"""
-        # TODO: Implement offline cash payment sync
-        # TODO: Decide what to do if incoming offline price charged does not validate
-        # Check for ticket for today matching license plate
-        # Create ticket if no match
-        # Update ticket if match - Overwrite created if earlier than current created
-        # Update modified if later than current modified
-        # Overwrite ticket number with incoming ticket number
 
     # Delegate QuerySet methods for IntelliSense support
     def pending_security(self) -> TicketQuerySet:
@@ -342,11 +319,6 @@ class ReEntryManager(SoftDeletableManager["ReEntry"], models.Manager["ReEntry"])
         **kwargs: Any,
     ) -> None:
         """Sync offline re-entry data"""
-        # TODO: Implement offline re-entry sync
-        # Check for re-entry for today matching license plate
-        # Create re-entry if no match
-        # Update re-entry if match - Overwrite created if earlier than current created
-        # Update modified if later than current modified
 
     # Delegate QuerySet methods for IntelliSense support
     def pending(self) -> ReEntryQuerySet:

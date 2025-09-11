@@ -15,6 +15,9 @@ from .base import BaseStatusHistory
 from .enums import TicketStatusChoices
 
 if TYPE_CHECKING:
+    from django.db.models import QuerySet
+    from django.db.models.expressions import Combinable  # noqa: F401
+
     from farmyard_manager.users.models import User
 
 
@@ -35,7 +38,7 @@ class TicketItemEditHistory(BaseEditHistory, models.Model):
 class TicketItem(BaseItem, CleanBeforeSaveModel, models.Model):
     edit_history_model = TicketItemEditHistory
 
-    ticket = models.ForeignKey(
+    ticket = models.ForeignKey["Ticket", "Ticket"](
         "entrance.Ticket",
         on_delete=models.PROTECT,
         related_name="ticket_items",
@@ -70,6 +73,14 @@ class TicketItem(BaseItem, CleanBeforeSaveModel, models.Model):
             raise ValidationError(error_message)
 
         return super().delete(*args, **kwargs)
+
+    @property
+    def payment(self):
+        return self.ticket.payment
+
+    @property
+    def vehicle(self):
+        return self.ticket.vehicle
 
 
 class TicketStatusHistory(BaseStatusHistory, CleanBeforeSaveModel, models.Model):
@@ -118,6 +129,8 @@ class Ticket(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
     item_model = TicketItem
 
     status_history_model = TicketStatusHistory
+
+    re_entries: "QuerySet[ReEntry]"
 
     status = models.CharField(
         max_length=255,

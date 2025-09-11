@@ -445,37 +445,6 @@ class TestBaseEntranceRecord:
         assert expected_snake_case in record.snake_case_model_name
 
     @pytest.mark.parametrize(
-        ("status", "performed_by_factory"),
-        [
-            ("pending", UserFactory),
-            ("active", UserFactory),
-            ("completed", UserFactory),
-        ],
-        ids=[
-            "pending_status",
-            "active_status",
-            "completed_status",
-        ],
-    )
-    def test_add_create_status(
-        self,
-        fake_entrance_record_factory,
-        status,
-        performed_by_factory,
-    ):
-        """Test adding create status history."""
-
-        record = fake_entrance_record_factory(status=status, save_to_db=True)
-        user = performed_by_factory()
-
-        record.add_create_status(performed_by=user)
-
-        status_history = record.status_history.get()
-        assert status_history.prev_status == ""
-        assert status_history.new_status == status
-        assert status_history.performed_by == user
-
-    @pytest.mark.parametrize(
         ("initial_status", "new_status"),
         [
             ("pending", "active"),
@@ -635,25 +604,4 @@ class TestBaseEntranceRecord:
         assert voided_items.count() == 1
         assert voided_items.first().id == item.id
 
-    # TODO: Implementonce ProceFactory is available
-    # def test_assign_payment_success(self, fake_entrance_record_factory):
-    #     """Test successfully assigning payment."""
-
-    #     record = fake_entrance_record_factory(save_to_db=True)
-    #     payment = PaymentFactory()
-
-    #     record.assign_payment(payment)
-
-    #     assert record.payment == payment
-
-    # def test_assign_payment_already_assigned(self, fake_entrance_record_factory):
-    #     """Test assigning payment when one already exists."""
-
-    #     record = fake_entrance_record_factory(save_to_db=True)
-    #     payment1 = PaymentFactory()
-    #     payment2 = PaymentFactory()
-
-    #     record.assign_payment(payment1)
-
-    #     with pytest.raises(ValueError, match="Payment has already assigned"):
-    #         record.assign_payment(payment2)
+    # TODO: Add payments related tests

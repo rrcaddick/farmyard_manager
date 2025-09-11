@@ -213,7 +213,7 @@ class TestReEntry:
         ],
     )
     @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
-    def test_has_unpaid_visitors_property(
+    def test_payment_reqiured_property(
         self,
         mock_get_price,
         visitors_left,
@@ -221,7 +221,7 @@ class TestReEntry:
         added_items,
         expected_has_unpaid,
     ):
-        """Test has_unpaid_visitors property calculation."""
+        """Test payment_required property calculation."""
         mock_get_price.return_value = Decimal("100.00")
 
         processed_ticket = TicketFactory(status=TicketStatusChoices.PROCESSED)
@@ -240,7 +240,7 @@ class TestReEntry:
                 applied_price=Decimal("100.00"),
             )
 
-        assert re_entry.has_unpaid_visitors == expected_has_unpaid
+        assert re_entry.payment_required == expected_has_unpaid
 
     @pytest.mark.parametrize(
         ("visitors_left", "visitors_returned", "expected_status"),
@@ -287,17 +287,7 @@ class TestReEntry:
         assert re_entry.ticket == processed_ticket
         assert re_entry in processed_ticket.re_entries.all()
 
-    # TODO: Uncomment when PaymentFactory is available
-    # def test_payment_assignment(self):
-    #     """Test assigning payment to re-entry."""
-    #     processed_ticket = TicketFactory(status=TicketStatusChoices.PROCESSED)
-    #     re_entry = ReEntryFactory(ticket=processed_ticket)
-    #     payment = PaymentFactory()
-
-    #     re_entry.assign_payment(payment)
-
-    #     assert re_entry.payment == payment
-    #     assert re_entry in payment.re_entries.all()
+    # TODO: Add payments related tests
 
 
 @pytest.mark.django_db(transaction=True)

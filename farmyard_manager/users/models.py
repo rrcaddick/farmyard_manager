@@ -1,15 +1,13 @@
-import uuid
-
 from django.contrib.auth.models import AbstractUser
 from django.db.models import CharField
-from django.db.models import UUIDField
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from django_extensions.db.models import TimeStampedModel
+from model_utils.models import TimeStampedModel
+
+from farmyard_manager.core.models import UUIDModelMixin
 
 
-class User(AbstractUser, TimeStampedModel):
-    uuid = UUIDField(unique=True, default=uuid.uuid4, editable=False)
+class User(AbstractUser, UUIDModelMixin, TimeStampedModel):
     name = CharField(_("Name of User"), blank=True, max_length=255)
 
     # Remove unwanted AbstractUser fields
@@ -28,3 +26,14 @@ class User(AbstractUser, TimeStampedModel):
 
         """
         return reverse("users:detail", kwargs={"username": self.username})
+
+    def get_active_shift(self):
+        """Get the user's active shift."""
+
+    @property
+    def is_manager(self) -> bool:
+        """Check if user has permission to process refunds."""
+        return True  # Placeholder implementation
+
+    def __str__(self) -> str:
+        return self.name if self.name else self.username

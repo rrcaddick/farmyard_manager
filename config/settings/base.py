@@ -95,6 +95,7 @@ THIRD_PARTY_APPS = [
     "corsheaders",
     "drf_spectacular",
     "webpack_loader",
+    "django_stubs_ext",
 ]
 
 LOCAL_APPS = [
@@ -376,3 +377,5 @@ WEBPACK_LOADER = {
 
 # famyard_manager settings
 MAX_SECURITY_FAILS = 5
+
+REFUND_TIME_LIMIT_HOURS = 1

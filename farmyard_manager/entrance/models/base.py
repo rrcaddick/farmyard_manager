@@ -13,6 +13,8 @@ from farmyard_manager.core.fields import SnakeCaseFK
 from farmyard_manager.core.models import CleanBeforeSaveModel
 from farmyard_manager.core.models import UUIDModelMixin
 from farmyard_manager.core.models import UUIDRefNumberModelMixin
+from farmyard_manager.payments.models import Payment
+from farmyard_manager.payments.models import RefundVehicleAllocation
 from farmyard_manager.utils.int_utils import is_int
 from farmyard_manager.utils.model_utils import validate_text_choice
 from farmyard_manager.utils.string_utils import to_snake_case
@@ -23,7 +25,6 @@ from .pricing import Pricing
 if TYPE_CHECKING:
     from django.db.models.query import QuerySet
 
-    from farmyard_manager.payments.models import Payment
     from farmyard_manager.users.models import User
 
 
@@ -127,6 +128,8 @@ class BaseItem(
 ):
     ItemTypeChoices = ItemTypeChoices
 
+    refund_allocations: "QuerySet[RefundVehicleAllocation]"
+
     created_by = SnakeCaseFK(
         "users.User",
         on_delete=models.PROTECT,
@@ -170,6 +173,35 @@ class BaseItem(
     @property
     def snake_case_model_name(self):
         return to_snake_case(self.__class__.__name__)
+
+    @property
+    def processed_refund_visitor_count(self):
+        return sum(
+            allocation.visitor_count
+            for allocation in self.refund_allocations.filter(
+                status=RefundVehicleAllocation.RefundVehicleAllocationStatusChoices.SETTLED,
+            )
+        )
+
+    @property
+    def pending_refund_visitor_count(self):
+        return sum(
+            allocation.visitor_count
+            for allocation in self.refund_allocations.filter(
+                status__in=[
+                    RefundVehicleAllocation.RefundVehicleAllocationStatusChoices.PENDING_COUNT,
+                    RefundVehicleAllocation.RefundVehicleAllocationStatusChoices.COUNTED,
+                ],
+            )
+        )
+
+    @property
+    def remaining_refundable_visitor_count(self):
+        return (
+            self.visitor_count
+            - self.processed_refund_visitor_count
+            - self.pending_refund_visitor_count
+        )
 
     def get_price(self):
         if self.item_type is None:
@@ -239,14 +271,6 @@ class BaseEntranceRecord(
     SoftDeletableModel,
     models.Model,
 ):
-    payment = SnakeCaseFK(
-        "payments.Payment",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        pluralize_related_name=True,
-    )  # type: ignore[misc]
-
     class Meta:
         abstract = True
 
@@ -257,6 +281,14 @@ class BaseEntranceRecord(
 
     def __str__(self):
         return f"{self.ref_number} - {self.status}"
+
+    payment = SnakeCaseFK["Payment | None", "Payment | None"](
+        "payments.Payment",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        pluralize_related_name=True,
+    )
 
     @required_field
     def status(self) -> models.CharField:
@@ -296,21 +328,24 @@ class BaseEntranceRecord(
         return sum(item.visitor_count for item in self.items)
 
     @property
+    def total_due_visitors(self):
+        return sum(
+            item.visitor_count
+            for item in self.items
+            if item.item_type == ItemTypeChoices.PUBLIC
+        )
+
+    @property
     def voided_items(self):
         return self.item_model.all_objects.all().filter(
             **{self.snake_case_model_name: self},
             is_removed=True,
         )
 
-    # TODO: Remove this method once test make use of manager method
-    def add_create_status(self, performed_by: "User"):
-        kwargs = {
-            self.snake_case_model_name: self,
-            "prev_status": "",
-            "new_status": self.status,
-            "performed_by": performed_by,
-        }
-        self.status_history_model.objects.create(**kwargs)
+    @property
+    def payable_item(self):
+        """The item that requires payment"""
+        return self.items.filter(applied_price__gt=0).first()
 
     def update_status(self, new_status: str, performed_by: "User"):
         prev_status = self.status
@@ -351,7 +386,7 @@ class BaseEntranceRecord(
         }
         return self.item_model.objects.create(**kwargs)
 
-    # TODO: Decide if this should have the item itself passed
+    # TODO: Refactor to work with item instance - Must be moved to inheriting class
     def remove_item(self, item_id: int, performed_by: "User"):  # noqa: ARG002
         try:
             # Use the correct relation property name
@@ -363,9 +398,29 @@ class BaseEntranceRecord(
         item.delete()
         return True
 
+    def initiate_payment(self):
+        """Creates a payment for this entrance record"""
+        return Payment.objects.initiate_entrance_payment(self)
+
     def assign_payment(self, payment: "Payment"):
+        """
+        Assigns this entrance records to an existing payment.
+        Used on multi ticket payments
+        """
         if self.payment:
-            error_message = "Payment has already assigned"
+            error_message = "Record is already assigned to a payment"
             raise ValueError(error_message)
         self.payment = payment
+        self.save(update_fields=["payment"])
+
+    def remove_pending_payment(self):
+        if not self.payment:
+            error_message = "No payment assigned to remove"
+            raise ValueError(error_message)
+
+        if self.payment.status != Payment.PaymentStatusChoices.PENDING_SETTLEMENT:
+            error_message = "Can only remove pending payments"
+            raise ValueError(error_message)
+
+        self.payment = None
         self.save(update_fields=["payment"])

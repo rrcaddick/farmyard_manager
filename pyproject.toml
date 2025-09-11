@@ -23,6 +23,8 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unused_configs = true
 strict_optional = true
+mypy_path = "stubs/**"
+explicit_package_bases = true
 plugins = [
     "mypy_django_plugin.main",
     "mypy_drf_plugin.main",

@@ -232,16 +232,7 @@ class TestTicket:
         assert ticket.vehicle == vehicle
         assert ticket in vehicle.tickets.all()
 
-    # TODO: Uncomment when PaymentFactory is available
-    # def test_payment_assignment(self):
-    #     """Test assigning payment to ticket."""
-    #     ticket = TicketFactory()
-    #     payment = PaymentFactory()
-
-    #     ticket.assign_payment(payment)
-
-    #     assert ticket.payment == payment
-    #     assert ticket in payment.tickets.all()
+    # TODO: Add payments related tests
 
 
 @pytest.mark.django_db(transaction=True)

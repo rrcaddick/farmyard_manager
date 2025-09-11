@@ -14,6 +14,8 @@ from .base import BaseStatusHistory
 from .enums import ReEntryStatusChoices
 
 if TYPE_CHECKING:
+    from farmyard_manager.entrance.models.ticket import Ticket  # noqa: F401
+    from farmyard_manager.payments.models import Payment  # noqa: F401
     from farmyard_manager.users.models import User
 
 
@@ -34,7 +36,7 @@ class ReEntryItemEditHistory(BaseEditHistory, models.Model):
 class ReEntryItem(BaseItem, CleanBeforeSaveModel, models.Model):
     edit_history_model = ReEntryItemEditHistory
 
-    re_entry = models.ForeignKey(
+    re_entry = models.ForeignKey["ReEntry", "ReEntry"](
         "entrance.ReEntry",
         on_delete=models.PROTECT,
         related_name="re_entry_items",
@@ -64,6 +66,14 @@ class ReEntryItem(BaseItem, CleanBeforeSaveModel, models.Model):
             raise ValidationError(error_message)
 
         return super().delete(*args, **kwargs)
+
+    @property
+    def payment(self):
+        return self.re_entry.payment
+
+    @property
+    def vehicle(self):
+        return self.re_entry.vehicle
 
 
 class ReEntryStatusHistory(BaseStatusHistory, CleanBeforeSaveModel, models.Model):
@@ -114,11 +124,12 @@ class ReEntry(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
 
     status_history_model = ReEntryStatusHistory
 
-    ticket = models.ForeignKey(
+    re_entry_items: "models.QuerySet[ReEntryItem]"
+
+    ticket = models.ForeignKey["Ticket", "Ticket"](
         "entrance.Ticket",
         on_delete=models.PROTECT,
         related_name="re_entries",
-        db_index=True,
     )
 
     status = models.CharField(
@@ -156,13 +167,16 @@ class ReEntry(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
             )
 
     @property
-    def has_unpaid_visitors(self):
+    def additional_visitors(self):
+        return max(0, (self.visitors_returned or 0) - self.visitors_left)
+
+    @property
+    def payment_required(self):
         # Only count additional visitors if MORE people returned than left
-        additional_visitors = max(0, (self.visitors_returned or 0) - self.visitors_left)
         added_visitor_count = sum(
             item.visitor_count for item in self.re_entry_items.all()
         )
-        return additional_visitors > added_visitor_count
+        return self.additional_visitors > added_visitor_count
 
     @property
     def is_processed(self):
@@ -170,6 +184,10 @@ class ReEntry(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
             ReEntryStatusChoices.PROCESSED,
             ReEntryStatusChoices.REFUNDED,
         ]
+
+    @property
+    def vehicle(self):
+        return self.ticket.vehicle
 
     def process_return(self, visitors_returned: int, performed_by: "User"):
         # Update visitors_returned

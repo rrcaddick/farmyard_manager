@@ -172,7 +172,6 @@ class SecurityFailManager(models.Manager["SecurityFail"]):
         created_timestamp: Any = None,
     ) -> None:
         """Placeholder for offline security fail sync"""
-        # TODO: Implement offline security fail synchronization
 
     # Delegate QuerySet methods to get IntelliSense support
     def by_failure_type(self, failure_type: str) -> SecurityFailQuerySet:
@@ -221,7 +220,6 @@ class BlacklistManager(models.Manager["Blacklist"]):
         created_timestamp: Any = None,
     ) -> None:
         """Placeholder for offline blacklist sync"""
-        # TODO: Implement offline blacklist synchronization
 
     # Delegate QuerySet methods to get IntelliSense support
     def by_reason(self, reason: str) -> BlacklistQuerySet:

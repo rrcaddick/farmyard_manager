@@ -110,7 +110,7 @@ class TestVehicle:
         # Mock user's current shift that can create tickets
         mock_shift = MagicMock()
         mock_shift.can_create_tickets.return_value = True
-        user.get_current_shift = MagicMock(return_value=mock_shift)
+        user.get_active_shift = MagicMock(return_value=mock_shift)
 
         mock_create_ticket.return_value = new_ticket
 
@@ -138,7 +138,7 @@ class TestVehicle:
         mock_shift = MagicMock()
         mock_shift.can_create_tickets.return_value = False
         mock_shift.shift_type = "security_marshal"
-        user.get_current_shift = MagicMock(return_value=mock_shift)
+        user.get_active_shift = MagicMock(return_value=mock_shift)
 
         with pytest.raises(
             PermissionError,

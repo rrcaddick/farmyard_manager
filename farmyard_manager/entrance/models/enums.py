@@ -14,8 +14,10 @@ class ItemTypeChoices(models.TextChoices):
 class TicketStatusChoices(TransitionTextChoices):
     PENDING_SECURITY = ("pending_security", "Pending Security")
     PASSED_SECURITY = ("passed_security", "Passed Security")
+    FAILED_SECURITY = ("failed_security", "Failed Security")
     COUNTED = ("counted", "Visitors Counted")
     PROCESSED = ("processed", "Processed")
+    PARTIALLY_REFUNDED = ("partially_refunded", "Ticket Partially Refunded")
     REFUNDED = ("refunded", "Ticket Refunded")
 
     # TODO: Look into this setting "": [cls.PENDING_SECURITY], transition
@@ -24,10 +26,11 @@ class TicketStatusChoices(TransitionTextChoices):
     def get_transition_map(cls) -> dict:
         return {
             "": [cls.PENDING_SECURITY],
-            cls.PENDING_SECURITY: [cls.PASSED_SECURITY],
+            cls.PENDING_SECURITY: [cls.PASSED_SECURITY, cls.FAILED_SECURITY],
             cls.PASSED_SECURITY: [cls.COUNTED],
             cls.COUNTED: [cls.PROCESSED],
             cls.PROCESSED: [cls.REFUNDED],
+            cls.FAILED_SECURITY: [],
             cls.REFUNDED: [],
         }
 
