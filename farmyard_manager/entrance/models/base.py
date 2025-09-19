@@ -97,10 +97,6 @@ class BaseEditHistory(
                 f"{self.new_value} is a valid item type",
             )
 
-            if self.prev_value == self.ItemTypeChoices.VOIDED:
-                error_message = "Voided items cannot be edited"
-                raise ValidationError(error_message)
-
         # Checks if the new value is a valid visitor count
         if self.field == self.FieldChoices.VISITOR_COUNT:
             if is_int(self.new_value):
@@ -203,12 +199,13 @@ class BaseItem(
             - self.pending_refund_visitor_count
         )
 
+    # TODO: This is no longer needed. Remove once tests pass
     def get_price(self):
         if self.item_type is None:
             error_message = "Set item type befor getting price"
             raise ValueError(error_message)
 
-        return Pricing.get_price(self.item_type)
+        return Pricing.objects.get_price()
 
     def edit(
         self,
@@ -343,9 +340,12 @@ class BaseEntranceRecord(
         )
 
     @property
-    def payable_item(self):
-        """The item that requires payment"""
-        return self.items.filter(applied_price__gt=0).first()
+    def public_ticket_item(self):
+        """
+        The public entrance item, if it exists. Contains the visitor count
+        for paid visitors. Used in refund vehicle allocations.
+        """
+        return self.items.filter(item_type=ItemTypeChoices.PUBLIC)
 
     def update_status(self, new_status: str, performed_by: "User"):
         prev_status = self.status
@@ -373,7 +373,7 @@ class BaseEntranceRecord(
     ):
         # Get price for this type
         applied_price = (
-            Pricing.get_price(item_type) if applied_price is None else applied_price
+            Pricing.objects.get_price() if applied_price is None else applied_price
         )
 
         # Create the item using the dynamic relationship

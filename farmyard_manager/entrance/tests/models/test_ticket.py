@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 
 from farmyard_manager.entrance.models.enums import ItemTypeChoices
 from farmyard_manager.entrance.models.enums import TicketStatusChoices
+from farmyard_manager.entrance.models.pricing import Pricing
 from farmyard_manager.entrance.tests.models.factories import PricingFactory
 from farmyard_manager.entrance.tests.models.factories import TicketFactory
 from farmyard_manager.entrance.tests.models.factories import (
@@ -19,14 +20,17 @@ from farmyard_manager.users.tests.factories import UserFactory
 from farmyard_manager.vehicles.tests.factories import VehicleFactory
 
 
+# TODO: Pricing tests can be refactored to use the new date range Pricing model
 @pytest.fixture
 def ticket_with_items():
     """Fixture providing a ticket with multiple items for testing calculations."""
     ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
 
-    # Create pricing for different item types
-    PricingFactory(ticket_item_type=ItemTypeChoices.PUBLIC, price=Decimal("50.00"))
-    PricingFactory(ticket_item_type=ItemTypeChoices.GROUP, price=Decimal("75.00"))
+    # Create base pricing for the date range
+    PricingFactory(
+        price_type=Pricing.PricingTypes.WEEKDAY,
+        price=Decimal("50.00"),
+    )
 
     # Add items to ticket
     TicketItemFactory(
@@ -239,7 +243,7 @@ class TestTicket:
 class TestTicketItem:
     """Test suite for the TicketItem model."""
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_str_representation(self, mock_get_price):
         """Test string representation of ticket item."""
         mock_get_price.return_value = Decimal("75.00")
@@ -255,7 +259,7 @@ class TestTicketItem:
         expected = f"3 {ItemTypeChoices.PUBLIC} visitors at 75.00"
         assert str(item) == expected
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_amount_due_calculation(self, mock_get_price):
         """Test amount_due calculation."""
         mock_get_price.return_value = Decimal("60.00")
@@ -287,7 +291,7 @@ class TestTicketItem:
             "refunded_blocks_add",
         ],
     )
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_clean_validation_on_add(self, mock_get_price, ticket_status, should_raise):
         """Test validation when adding items to tickets in different statuses."""
         mock_get_price.return_value = Decimal("100.00")
@@ -306,7 +310,7 @@ class TestTicketItem:
         else:
             item.full_clean()  # Should not raise
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_clean_validation_on_edit(self, mock_get_price):
         """Test validation when editing existing items."""
         mock_get_price.return_value = Decimal("100.00")
@@ -328,7 +332,7 @@ class TestTicketItem:
         ):
             item.full_clean()
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_delete_validation_processed_ticket(self, mock_get_price):
         """Test that items cannot be deleted from processed tickets."""
         mock_get_price.return_value = Decimal("100.00")
@@ -347,7 +351,7 @@ class TestTicketItem:
         ):
             item.delete()
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_delete_success_non_processed_ticket(self, mock_get_price):
         """Test that items can be deleted from non-processed tickets."""
         mock_get_price.return_value = Decimal("100.00")
@@ -360,7 +364,7 @@ class TestTicketItem:
         # Verify soft deletion
         assert item.is_removed is True
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_edit_item_type_updates_price(self, mock_get_price):
         """Test editing item type updates applied price."""
         # Set up different return values for different calls
@@ -385,10 +389,8 @@ class TestTicketItem:
 
         assert item.item_type == ItemTypeChoices.GROUP
         assert item.applied_price == Decimal("150.00")
-        # Verify the last call was for GROUP type
-        assert mock_get_price.call_args_list[-1][0][0] == ItemTypeChoices.GROUP
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_edit_visitor_count_preserves_price(self, mock_get_price):
         """Test editing visitor count preserves applied price."""
         mock_get_price.return_value = Decimal("75.00")
@@ -410,7 +412,7 @@ class TestTicketItem:
         assert item.visitor_count == 5  # noqa: PLR2004
         assert item.applied_price == original_price
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_edit_creates_history_entry(self, mock_get_price):
         """Test that editing creates appropriate history entries."""
         # First call for factory creation, second call for edit
@@ -450,7 +452,7 @@ class TestTicketItem:
 class TestTicketItemEditHistory:
     """Test suite for the TicketItemEditHistory model."""
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_str_representation(self, mock_get_price):
         """Test string representation of edit history."""
         mock_get_price.return_value = Decimal("100.00")
@@ -484,14 +486,6 @@ class TestTicketItemEditHistory:
                 True,
                 "invalid_type is a valid item type",
             ),
-            # Voided item edit
-            (
-                "item_type",
-                ItemTypeChoices.VOIDED,
-                ItemTypeChoices.PUBLIC,
-                True,
-                "Voided items cannot be edited",
-            ),
             # Invalid visitor count
             (
                 "visitor_count",
@@ -507,12 +501,11 @@ class TestTicketItemEditHistory:
             "valid_visitor_count_edit",
             "invalid_field_choice",
             "invalid_item_type_choice",
-            "voided_item_edit",
             "non_integer_visitor_count",
             "negative_visitor_count",
         ],
     )
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_field_validation(
         self,
         mock_get_price,
@@ -544,7 +537,7 @@ class TestTicketItemEditHistory:
         else:
             history.full_clean()  # Should not raise
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_deletion_prevented(self, mock_get_price):
         """Test that edit history entries cannot be deleted."""
         mock_get_price.return_value = Decimal("100.00")
@@ -560,7 +553,7 @@ class TestTicketItemEditHistory:
         ):
             history.delete()
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_ticket_item_relationship(self, mock_get_price):
         """Test relationship with ticket item."""
         mock_get_price.return_value = Decimal("100.00")

@@ -1,3 +1,4 @@
+from datetime import date
 from datetime import datetime
 from typing import TYPE_CHECKING
 from typing import Any
@@ -11,8 +12,51 @@ from model_utils.managers import SoftDeletableQuerySet
 if TYPE_CHECKING:
     from farmyard_manager.entrance.models import ReEntry
     from farmyard_manager.entrance.models import Ticket
+    from farmyard_manager.entrance.models.pricing import Pricing
     from farmyard_manager.users.models import User
     from farmyard_manager.vehicles.models import Vehicle
+
+
+class PricingQuerySet(models.QuerySet["Pricing"]):
+    def get_price(
+        self,
+        lookup_date: datetime | date | None = None,
+    ) -> "Pricing | None":
+        """Retrieves the applicable price for a given date. Defaults to today"""
+        # Default to today
+        if lookup_date is None:
+            lookup_date = timezone.now().date()
+
+        # Handle both datetime and date objects
+        if isinstance(lookup_date, datetime):
+            lookup_date = lookup_date.date()
+
+        # Check if date is weekend
+        weekend_indices = [5, 6]
+        is_weekend = lookup_date.weekday() in weekend_indices
+
+        # Exclude the non-matching seasonal type
+        queryset = self.filter(
+            start_date__lte=lookup_date,
+            end_date__gte=lookup_date,
+        )
+
+        if is_weekend:
+            queryset = queryset.exclude(price_type="weekday")
+        else:
+            queryset = queryset.exclude(price_type="weekend")
+
+        # Returns the highest priority price if multiple match
+        return queryset.order_by("-price").first()
+
+
+class PricingManager(models.Manager["Pricing"]):
+    def get_queryset(self) -> PricingQuerySet:
+        return PricingQuerySet(self.model, using=self._db)
+
+    def get_price(self, date: datetime | date | None = None) -> "Pricing | None":
+        """Wrapper method to get price directly from manager"""
+        return self.get_queryset().get_price(date)
 
 
 class TicketQuerySet(SoftDeletableQuerySet["Ticket"], models.QuerySet["Ticket"]):

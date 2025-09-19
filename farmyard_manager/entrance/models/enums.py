@@ -5,10 +5,9 @@ from farmyard_manager.core.models import TransitionTextChoices
 
 class ItemTypeChoices(models.TextChoices):
     PUBLIC = ("public", "Public")
+    ONLINE = ("online", "Online")
     GROUP = ("group", "Group")
     SCHOOL = ("school", "School")
-    ONLINE = ("online", "Online")
-    VOIDED = ("voided", "VOIDED")
 
 
 class TicketStatusChoices(TransitionTextChoices):

@@ -237,12 +237,29 @@ class ReEntryItemEditHistoryAdmin(admin.ModelAdmin):
 @admin.register(Pricing)
 class PricingAdmin(admin.ModelAdmin):
     list_display = [
-        "ticket_item_type",
+        "price_type",
         "price",
-        "price_start",
-        "price_end",
-        "is_active",
+        "start_date",
+        "end_date",
+        "created",
     ]
-    list_filter = ["ticket_item_type", "is_active"]
-    search_fields = ["ticket_item_type"]
-    readonly_fields = ["created", "modified"]
+    list_filter = ["price_type", "created", "modified"]
+    search_fields = ["price_type"]
+    readonly_fields = ["id", "created", "modified"]  # UUID field should be readonly
+    ordering = ["-created"]
+
+    fieldsets = (
+        (
+            "Pricing Information",
+            {
+                "fields": ("price_type", "price", "start_date", "end_date"),
+            },
+        ),
+        (
+            "Metadata",
+            {
+                "fields": ("id", "created", "modified"),
+                "classes": ("collapse",),
+            },
+        ),
+    )

@@ -1,11 +1,9 @@
-from datetime import timedelta
+from datetime import date
 from decimal import Decimal
 
 import factory
-from django.utils import timezone
 from factory.django import DjangoModelFactory
 
-from farmyard_manager.entrance.models import Pricing
 from farmyard_manager.entrance.models import ReEntry
 from farmyard_manager.entrance.models import ReEntryItem
 from farmyard_manager.entrance.models import ReEntryItemEditHistory
@@ -14,16 +12,16 @@ from farmyard_manager.entrance.models import Ticket
 from farmyard_manager.entrance.models import TicketItem
 from farmyard_manager.entrance.models import TicketItemEditHistory
 from farmyard_manager.entrance.models import TicketStatusHistory
+from farmyard_manager.entrance.models.pricing import Pricing
 from farmyard_manager.users.tests.factories import UserFactory
 from farmyard_manager.vehicles.tests.factories import VehicleFactory
 
 
 class PricingFactory(DjangoModelFactory[Pricing]):
-    ticket_item_type = factory.Iterator(Pricing.ItemTypeChoices.values)
-    price = factory.LazyFunction(lambda: Decimal("100.00"))
-    price_start = factory.LazyFunction(lambda: timezone.now())
-    price_end = factory.LazyFunction(lambda: timezone.now() + timedelta(days=30))
-    is_active = True
+    price_type = Pricing.PricingTypes.WEEKDAY
+    start_date = date(2024, 1, 1)
+    end_date = date(2024, 12, 31)
+    price = Decimal("100.00")
 
     class Meta:
         model = Pricing
@@ -42,7 +40,7 @@ class TicketItemFactory(DjangoModelFactory[TicketItem]):
     created_by = factory.SubFactory(UserFactory)
     item_type = TicketItem.ItemTypeChoices.PUBLIC
     visitor_count = 2
-    applied_price = factory.LazyAttribute(lambda o: Pricing.get_price(o.item_type))
+    applied_price = factory.LazyAttribute(lambda obj: Pricing.objects.get_price())  # noqa: ARG005
 
     class Meta:
         model = TicketItem
@@ -85,7 +83,7 @@ class ReEntryItemFactory(DjangoModelFactory[ReEntryItem]):
     created_by = factory.SubFactory(UserFactory)
     item_type = ReEntryItem.ItemTypeChoices.PUBLIC
     visitor_count = 2
-    applied_price = factory.LazyAttribute(lambda o: Pricing.get_price(o.item_type))
+    applied_price = factory.LazyAttribute(lambda obj: Pricing.objects.get_price())  # noqa: ARG005
 
     class Meta:
         model = ReEntryItem

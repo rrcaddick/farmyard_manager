@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError
 
 from farmyard_manager.entrance.models.enums import ItemTypeChoices
 from farmyard_manager.entrance.models.enums import ReEntryStatusChoices
+from farmyard_manager.entrance.models.pricing import Pricing
 from farmyard_manager.entrance.tests.models.factories import PricingFactory
 from farmyard_manager.entrance.tests.models.factories import ReEntryFactory
 from farmyard_manager.entrance.tests.models.factories import (
@@ -21,6 +22,7 @@ from farmyard_manager.entrance.models.enums import TicketStatusChoices
 from farmyard_manager.users.tests.factories import UserFactory
 
 
+# TODO: Pricing tests can be refactored to use the new date range Pricing model
 @pytest.fixture
 def re_entry_with_items():
     """Fixture providing a re-entry with multiple items for testing calculations."""
@@ -33,9 +35,11 @@ def re_entry_with_items():
         visitors_returned=7,  # More returned than left
     )
 
-    # Create pricing for different item types
-    PricingFactory(ticket_item_type=ItemTypeChoices.PUBLIC, price=Decimal("50.00"))
-    PricingFactory(ticket_item_type=ItemTypeChoices.GROUP, price=Decimal("75.00"))
+    # Create base pricing for the date range
+    PricingFactory(
+        price_type=Pricing.PricingTypes.WEEKDAY,
+        price=Decimal("50.00"),
+    )
 
     # Add items to re-entry
     ReEntryItemFactory(
@@ -212,7 +216,7 @@ class TestReEntry:
             "same_returned_with_items_no_unpaid",
         ],
     )
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_payment_reqiured_property(
         self,
         mock_get_price,
@@ -294,7 +298,7 @@ class TestReEntry:
 class TestReEntryItem:
     """Test suite for the ReEntryItem model."""
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_str_representation(self, mock_get_price):
         """Test string representation of re-entry item."""
         mock_get_price.return_value = Decimal("75.00")
@@ -313,7 +317,7 @@ class TestReEntryItem:
         expected = f"3 {ItemTypeChoices.PUBLIC} visitors at 75.00"
         assert str(item) == expected
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_amount_due_calculation(self, mock_get_price):
         """Test amount_due calculation."""
         mock_get_price.return_value = Decimal("60.00")
@@ -346,7 +350,7 @@ class TestReEntryItem:
             "refunded_blocks_add",
         ],
     )
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_clean_validation_on_add(
         self,
         mock_get_price,
@@ -375,7 +379,7 @@ class TestReEntryItem:
         else:
             item.full_clean()  # Should not raise
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_clean_validation_on_edit(self, mock_get_price):
         """Test validation when editing existing items."""
         mock_get_price.return_value = Decimal("100.00")
@@ -401,7 +405,7 @@ class TestReEntryItem:
         ):
             item.full_clean()
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_delete_validation_processed_re_entry(self, mock_get_price):
         """Test that items cannot be deleted from processed re-entries."""
         mock_get_price.return_value = Decimal("100.00")
@@ -424,7 +428,7 @@ class TestReEntryItem:
         ):
             item.delete()
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_delete_success_non_processed_re_entry(self, mock_get_price):
         """Test that items can be deleted from non-processed re-entries."""
         mock_get_price.return_value = Decimal("100.00")
@@ -441,7 +445,7 @@ class TestReEntryItem:
         # Verify soft deletion
         assert item.is_removed is True
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_edit_item_type_updates_price(self, mock_get_price):
         """Test editing item type updates applied price."""
         # Set up different return values for different calls
@@ -470,10 +474,8 @@ class TestReEntryItem:
 
         assert item.item_type == ItemTypeChoices.GROUP
         assert item.applied_price == Decimal("150.00")
-        # Verify the last call was for GROUP type
-        assert mock_get_price.call_args_list[-1][0][0] == ItemTypeChoices.GROUP
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_edit_visitor_count_preserves_price(self, mock_get_price):
         """Test editing visitor count preserves applied price."""
         mock_get_price.return_value = Decimal("75.00")
@@ -499,7 +501,7 @@ class TestReEntryItem:
         assert item.visitor_count == 5  # noqa: PLR2004
         assert item.applied_price == original_price
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_edit_creates_history_entry(self, mock_get_price):
         """Test that editing creates appropriate history entries."""
         # First call for factory creation, second call for edit
@@ -543,7 +545,7 @@ class TestReEntryItem:
 class TestReEntryItemEditHistory:
     """Test suite for the ReEntryItemEditHistory model."""
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_str_representation(self, mock_get_price):
         """Test string representation of edit history."""
         mock_get_price.return_value = Decimal("100.00")
@@ -581,13 +583,6 @@ class TestReEntryItemEditHistory:
                 "invalid_type is a valid item type",
             ),
             # Voided item edit
-            (
-                "item_type",
-                ItemTypeChoices.VOIDED,
-                ItemTypeChoices.PUBLIC,
-                True,
-                "Voided items cannot be edited",
-            ),
             # Invalid visitor count
             (
                 "visitor_count",
@@ -603,12 +598,11 @@ class TestReEntryItemEditHistory:
             "valid_visitor_count_edit",
             "invalid_field_choice",
             "invalid_item_type_choice",
-            "voided_item_edit",
             "non_integer_visitor_count",
             "negative_visitor_count",
         ],
     )
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_field_validation(
         self,
         mock_get_price,
@@ -643,7 +637,7 @@ class TestReEntryItemEditHistory:
         else:
             history.full_clean()  # Should not raise
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_deletion_prevented(self, mock_get_price):
         """Test that edit history entries cannot be deleted."""
         mock_get_price.return_value = Decimal("100.00")
@@ -662,7 +656,7 @@ class TestReEntryItemEditHistory:
         ):
             history.delete()
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_re_entry_item_relationship(self, mock_get_price):
         """Test relationship with re-entry item."""
         mock_get_price.return_value = Decimal("100.00")

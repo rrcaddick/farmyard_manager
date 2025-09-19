@@ -56,19 +56,12 @@ class TestBaseEditHistory:
                 "invalid_type",
                 "invalid_type is a valid item type",
             ),
-            (
-                "item_type",
-                "voided",
-                "online",
-                "Voided items cannot be edited",
-            ),
             ("visitor_count", "5", "invalid", "Visitor count must be a valid integer"),
             ("visitor_count", "5", "-1", "Visitor count must be greater than 0"),
         ],
         ids=[
             "invalid_field_choice",
             "invalid_item_type_choice",
-            "voided_item_edit",
             "non_integer_visitor_count",
             "negative_visitor_count",
         ],
@@ -209,21 +202,6 @@ class TestBaseItem:
         expected_amount = Decimal("150.00")  # 3 * 50.00
         assert item.amount_due == expected_amount
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
-    def test_base_item_get_price(self, mock_get_price, fake_item_factory):
-        """Test get_price method."""
-        mock_get_price.return_value = Decimal("75.00")
-
-        item = fake_item_factory(
-            item_type=ItemTypeChoices.PUBLIC,
-            visitor_count=3,
-            applied_price=Decimal("100.00"),
-        )
-
-        price = item.get_price()
-        assert price == Decimal("75.00")
-        mock_get_price.assert_called_once_with(ItemTypeChoices.PUBLIC)
-
     def test_base_item_get_price_without_item_type(self, fake_item_factory):
         """Test get_price method raises error when item_type is None."""
         item = fake_item_factory(
@@ -262,7 +240,7 @@ class TestBaseItem:
         ],
         ids=["edit_item_type", "edit_visitor_count"],
     )
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_base_item_edit_single_field(
         self,
         mock_get_price,
@@ -485,7 +463,7 @@ class TestBaseEntranceRecord:
         ],
         ids=["public_item", "group_item", "online_item"],
     )
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_add_item(
         self,
         mock_get_price,
@@ -510,7 +488,7 @@ class TestBaseEntranceRecord:
         assert item.visitor_count == visitor_count
         assert item.applied_price == expected_price
         assert item.created_by == user
-        mock_get_price.assert_called_once_with(item_type)
+        mock_get_price.assert_called_once()
 
     def test_add_item_with_custom_price(self, fake_entrance_record_factory):
         """Test adding item with custom applied price."""
@@ -527,7 +505,7 @@ class TestBaseEntranceRecord:
 
         assert item.applied_price == custom_price
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_remove_item_success(self, mock_get_price, fake_entrance_record_factory):
         """Test successfully removing an item."""
         mock_get_price.return_value = Decimal("100.00")
@@ -569,7 +547,7 @@ class TestBaseEntranceRecord:
         expected_total = (2 * Decimal("50.00")) + (3 * Decimal("75.00"))
         assert record.total_due == expected_total
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_total_visitors_calculation(
         self,
         mock_get_price,
@@ -588,7 +566,7 @@ class TestBaseEntranceRecord:
         excepted_total_visitors = 7
         assert record.total_visitors == excepted_total_visitors
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.get_price")
+    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_voided_items_property(self, mock_get_price, fake_entrance_record_factory):
         """Test voided items property returns soft-deleted items."""
         mock_get_price.return_value = Decimal("100.00")
