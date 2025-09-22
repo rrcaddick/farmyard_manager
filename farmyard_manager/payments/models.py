@@ -170,10 +170,20 @@ class Payment(
         )
 
     @property
+    def refund_in_progress(self):
+        """Check if payment has an active refund in progress"""
+        return self.refunds.exclude(
+            status__in=[
+                Refund.StatusChoices.SETTLED,
+                Refund.StatusChoices.DENIED,
+            ],
+        ).exists()
+
+    @property
     def total_processed_refunds(self):
         """Total amount refunded across all processed refunds"""
         return sum(
-            refund.proccessed_refund_amount
+            refund.processed_refund_amount
             for refund in self.refunds.filter(status=Refund.StatusChoices.SETTLED)
         )
 
@@ -187,6 +197,7 @@ class Payment(
                     Refund.StatusChoices.PENDING_ALLOCATIONS,
                     Refund.StatusChoices.PENDING_TRANSACTIONS,
                     Refund.StatusChoices.PENDING_SETTLEMENT,
+                    Refund.StatusChoices.PARTIALLY_SETTLED,
                 ],
             )
         )
@@ -194,14 +205,6 @@ class Payment(
     @property
     def remaining_refundable_amount(self):
         """Remaining amount that can still be refunded"""
-        return max(
-            self.total_paid - self.total_processed_refunds - self.total_pending_refunds,
-            0,
-        )
-
-    @property
-    def remaining_refundable_count(self):
-        """Remaining visitor count that can still be refunded"""
         return max(
             self.total_paid - self.total_processed_refunds - self.total_pending_refunds,
             0,
@@ -308,6 +311,11 @@ class Payment(
 
     def clean(self):
         """Validate payment state"""
+        # Validation on creation
+        if not self.pk:
+            return
+
+        # Update check only after creation and existance of db record
         if (
             self.status == self.PaymentStatusChoices.SETTLED
             and self.total_outstanding > 0
@@ -388,6 +396,7 @@ class TransactionItem(
         max_length=50,
         choices=StatusChoices.choices,
         db_index=True,
+        default=StatusChoices.PROCESSED,
     )
 
     visitor_count = models.IntegerField()
@@ -450,7 +459,7 @@ class TransactionItem(
     def total_processed_refund_amount(self):
         """Total amount refunded from this transaction item"""
         return sum(
-            refund_transaction.processed_amount
+            refund_transaction.processed_amount or 0
             for refund_transaction in self.refund_transaction_items.filter(
                 status=RefundTransactionItem.StatusChoices.PROCESSED,
             )
@@ -468,21 +477,21 @@ class TransactionItem(
 
     @property
     def total_pending_refund_amount(self):
-        """Total amount refunded from this transaction item"""
+        """Total pending refunds transactions amount for this item"""
         return sum(
             refund_transaction.requested_amount
             for refund_transaction in self.refund_transaction_items.filter(
-                refund__status=RefundTransactionItem.StatusChoices.PENDING,
+                status=RefundTransactionItem.StatusChoices.PENDING,
             )
         )
 
     @property
     def total_pending_refund_count(self):
-        """Total amount refunded from this transaction item"""
+        """Total pending refunds transactions count for this item"""
         return sum(
             refund_transaction.visitor_count
             for refund_transaction in self.refund_transaction_items.filter(
-                refund__status=RefundTransactionItem.StatusChoices.PENDING,
+                status=RefundTransactionItem.StatusChoices.PENDING,
             )
         )
 
@@ -537,16 +546,14 @@ class RefundVehicleAllocation(
         COUNTED = ("counted", "Counted")
         SETTLED = ("settled", "Settled")
         DENIED = ("denied", "Denied")
-        CANCELED = ("canceled", "Canceled")
 
         @classmethod
         def get_transition_map(cls) -> dict:
             return {
-                cls.PENDING_COUNT: [cls.COUNTED, cls.CANCELED],
-                cls.COUNTED: [cls.SETTLED, cls.DENIED, cls.CANCELED],
+                cls.PENDING_COUNT: [cls.COUNTED],
+                cls.COUNTED: [cls.SETTLED, cls.DENIED],
                 cls.SETTLED: [],
                 cls.DENIED: [],
-                cls.CANCELED: [],
             }
 
     refund = models.ForeignKey["Refund", "Refund"](
@@ -680,19 +687,19 @@ class RefundTransactionItem(
     class StatusChoices(TransitionTextChoices):
         PENDING = ("pending", "Pending")
         PROCESSED = ("processed", "Processed")
-        CANCELED = ("canceled", "Canceled")
+        DENIED = ("denied", "Denied")
 
         @classmethod
         def get_transition_map(cls) -> dict:
             return {
-                cls.PENDING: [cls.PROCESSED, cls.CANCELED],
+                cls.PENDING: [cls.PROCESSED, cls.DENIED],
                 cls.PROCESSED: [],
-                cls.CANCELED: [],
+                cls.DENIED: [],
             }
 
     refund = models.ForeignKey["Refund", "Refund"](
         "payments.Refund",
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         related_name="refund_transaction_items",
     )
 
@@ -708,7 +715,7 @@ class RefundTransactionItem(
         default=StatusChoices.PENDING,
     )
 
-    visitor_count = models.IntegerField()
+    visitor_count = models.PositiveIntegerField()
 
     requested_amount = models.DecimalField(max_digits=10, decimal_places=2)
 
@@ -734,9 +741,31 @@ class RefundTransactionItem(
 
     class Meta:
         db_table = "payments_refund_transaction_items"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(requested_amount__gt=0),
+                name="positive_requested_amount",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=["pending", "denied"],
+                    processed_amount__isnull=True,
+                )
+                | models.Q(
+                    status="processed",
+                    processed_amount__gt=0,
+                ),
+                name="processed_amount_valid_for_status",
+            ),
+        ]
 
     def __str__(self):
-        return f"RefundTransaction {self.id} - {self.status} - R{self.processed_amount}"
+        amount = (
+            self.processed_amount
+            if self.status == self.StatusChoices.PROCESSED
+            else self.requested_amount
+        )
+        return f"RefundTransaction {self.id} - {self.status} - R{amount}"
 
     def clean(self):
         """Validate refund transaction constraints"""
@@ -799,25 +828,23 @@ class Refund(
     """
 
     # TODO: Add role based permissions for user actions
-    # TODO: Complete the refund denial and cancellation processes
-
     class StatusChoices(TransitionTextChoices):
         PENDING_ALLOCATIONS = ("pending_allocations", "Pending Allocations")
         PENDING_TRANSACTIONS = ("pending_transactions", "Pending Transactions")
         PENDING_SETTLEMENT = ("pending_settlement", "Pending Settlement")
+        PARTIALLY_SETTLED = ("partially_settled", "Partially Settled")
         SETTLED = ("settled", "Settled")
         DENIED = ("denied", "Denied")
-        CANCELED = ("canceled", "Canceled")
 
         @classmethod
         def get_transition_map(cls) -> dict:
             return {
-                cls.PENDING_ALLOCATIONS: [cls.PENDING_TRANSACTIONS, cls.CANCELED],
-                cls.PENDING_TRANSACTIONS: [cls.PENDING_SETTLEMENT, cls.CANCELED],
-                cls.PENDING_SETTLEMENT: [cls.SETTLED, cls.DENIED, cls.CANCELED],
+                cls.PENDING_ALLOCATIONS: [cls.PENDING_TRANSACTIONS],
+                cls.PENDING_TRANSACTIONS: [cls.PENDING_SETTLEMENT],
+                cls.PENDING_SETTLEMENT: [cls.SETTLED, cls.DENIED],
+                cls.PARTIALLY_SETTLED: [cls.SETTLED, cls.DENIED],
                 cls.SETTLED: [],
                 cls.DENIED: [],
-                cls.CANCELED: [],
             }
 
     vehicle_allocations: "QuerySet[RefundVehicleAllocation]"
@@ -863,7 +890,7 @@ class Refund(
     def __str__(self):
         return (
             f"Refund {self.ref_number} - {self.status} - "
-            f"R{self.proccessed_refund_amount}"
+            f"R{self.processed_refund_amount}"
         )
 
     def __init__(self, *args, **kwargs):
@@ -898,10 +925,10 @@ class Refund(
         )
 
     @property
-    def proccessed_refund_amount(self):
-        """Total visitor count being refunded"""
+    def processed_refund_amount(self):
+        """Total amount already refunded"""
         return sum(
-            item.processed_amount
+            item.processed_amount or 0
             for item in self.refund_transaction_items.filter(
                 status=RefundTransactionItem.StatusChoices.PROCESSED,
             )
@@ -909,9 +936,9 @@ class Refund(
 
     @property
     def pending_refund_amount(self):
-        """Total visitor count being refunded"""
+        """Total amount being refunded"""
         return sum(
-            item.processed_amount
+            item.requested_amount
             for item in self.refund_transaction_items.filter(
                 status=RefundTransactionItem.StatusChoices.PENDING,
             )
@@ -938,6 +965,13 @@ class Refund(
     @property
     def all_transactions_processed(self) -> bool:
         return self.processed_refund_count == self.total_allocation_count
+
+    @property
+    def has_processed_transactions(self) -> bool:
+        # Additional safety check for processed transactions
+        return self.refund_transaction_items.filter(
+            status=RefundTransactionItem.StatusChoices.PROCESSED,
+        ).exists()
 
     @transaction.atomic
     def complete_refund(self, completed_by: "User"):
@@ -977,24 +1011,75 @@ class Refund(
         # Update payment status
         payment_status = (
             Payment.PaymentStatusChoices.REFUNDED
-            if self.payment.total_paid == self.proccessed_refund_amount
+            if self.payment.total_paid == self.payment.total_processed_refunds
             else Payment.PaymentStatusChoices.PARTIALLY_REFUNDED
         )
 
         self.payment.update_status(payment_status)
 
-    def deny_refund(self, denied_by: "User", reason: str = ""):
+    def deny_refund(self, denied_by: "User", denial_reason: str):
         """Deny a refund request"""
-        if self.status in [self.StatusChoices.SETTLED, self.StatusChoices.DENIED]:
-            error_message = "Cannot deny already approved or denied refunds"
+        if denied_by.is_manager is False:
+            error_message = "Only managers can deny refunds"
             raise ValidationError(error_message)
 
-        if reason:
-            self.reason += f"Denied: {reason}"
+        if self.status == self.StatusChoices.DENIED:
+            error_message = "Refund already denied"
+            raise ValidationError(error_message)
 
-        self.status = self.StatusChoices.DENIED
-        self.completed_by = denied_by
-        self.save(update_fields=["status", "approved_by", "reason"])
+        if self.status in [
+            self.StatusChoices.SETTLED,
+            self.StatusChoices.PARTIALLY_SETTLED,
+        ]:
+            error_message = "Cannot deny partially or fully settled refunds"
+            raise ValidationError(error_message)
+
+        if self.has_processed_transactions:
+            error_message = "Cannot deny refund with processed transactions"
+            raise ValidationError(error_message)
+
+        with transaction.atomic():
+            # Update refund status
+            self.status = self.StatusChoices.DENIED
+            self.reason += f" - Denied: {denial_reason}"
+            self.completed_by = denied_by
+            self.completed_at = timezone.now()
+            self.save(
+                update_fields=["status", "completed_by", "reason", "completed_at"],
+            )
+
+            # Update all vehicle allocations to denied
+            self.vehicle_allocations.update(
+                status=RefundVehicleAllocation.RefundVehicleAllocationStatusChoices.DENIED,
+            )
+
+            # Update all transaction items to denied
+            self.refund_transaction_items.update(
+                status=RefundTransactionItem.StatusChoices.DENIED,
+            )
+
+    def cancel_refund(self):
+        """
+        Cancel and soft delete a refund request. Only possible on unprocessed refunds
+        """
+        if self.status == self.StatusChoices.DENIED:
+            error_message = "Cannot cancel already denied refund"
+            raise ValidationError(error_message)
+
+        if self.status in [
+            self.StatusChoices.SETTLED,
+            self.StatusChoices.PARTIALLY_SETTLED,
+        ]:
+            error_message = "Cannot cancel partially or fully settled refunds"
+            raise ValidationError(
+                error_message,
+            )
+
+        if self.has_processed_transactions:
+            error_message = "Cannot cancel refund with processed transactions"
+            raise ValidationError(error_message)
+
+        self.delete()
 
     def update_status(self, new_status: "Refund.StatusChoices"):
         """Validate status transition and update refund status"""
@@ -1072,11 +1157,16 @@ class Refund(
         processed_amount: Decimal,
     ):
         """Marks a pending refund transaction as processed"""
-
         # Ensure that only manager are able to process refunds
         if processed_by.is_manager is False:
             error_message = "Only manager can process process refunds"
             raise ValidationError(error_message)
+
+        if self.status in [self.StatusChoices.DENIED, self.StatusChoices.SETTLED]:
+            error_message = "Cannot process transactions on denied/settled refunds"
+            raise ValidationError(
+                error_message,
+            )
 
         with transaction.atomic():
             transaction_item = refund_transaction_item.mark_processed(
@@ -1086,6 +1176,8 @@ class Refund(
 
             if self.all_transactions_processed:
                 self.complete_refund(completed_by=processed_by)
+            elif self.status != self.StatusChoices.PARTIALLY_SETTLED:
+                self.update_status(self.StatusChoices.PARTIALLY_SETTLED)
 
             return transaction_item
 
@@ -1098,12 +1190,16 @@ class Refund(
             error_message = "Can only refund settled or partially refunded payments"
             raise ValidationError(error_message)
 
-        # Check refund amount doesn't exceed payment limits
-        if self.pending_refund_amount > self.total_allocation_count:
-            error_message = (
-                f"Requested refund for {self.pending_refund_amount} visitors"
-                f"exceed max refundable count of {self.total_allocation_count}"
-            )
+        # Check refund amount doesn't exceed allocation limits
+        total_refund_count = self.processed_refund_count + self.pending_refund_count
+        if total_refund_count > self.total_allocation_count:
+            error_message = "Refund exceeds maximum allocation count"
+            raise ValidationError(error_message)
+
+        # Check refund amount doesn't exceed payment remaining refundable amount
+        total_refund_amount = self.processed_refund_amount + self.pending_refund_amount
+        if total_refund_amount > self.payment.remaining_refundable_amount:
+            error_message = "Refund exceeds payment remaining refundable amount"
             raise ValidationError(error_message)
 
         # Validate status transitions

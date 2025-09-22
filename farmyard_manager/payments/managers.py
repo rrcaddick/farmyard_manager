@@ -174,6 +174,10 @@ class RefundManager(SoftDeletableManager["Refund"], models.Manager["Refund"]):
             error_message = "Payment is outside refund time window or not completed"
             raise ValidationError(error_message)
 
+        if payment.refund_in_progress:
+            error_message = "Payment already has an active refund in progress"
+            raise ValidationError(error_message)
+
         if payment.remaining_refundable_amount <= 0:
             error_message = "No refundable amount remaining"
             raise ValidationError(error_message)
@@ -215,7 +219,10 @@ class RefundVehicleAllocationQuerySet(
         )
 
 
-class RefundVehicleAllocationManager(models.Manager["RefundVehicleAllocation"]):
+class RefundVehicleAllocationManager(
+    SoftDeletableManager["RefundVehicleAllocation"],
+    models.Manager["RefundVehicleAllocation"],
+):
     def get_queryset(self) -> RefundVehicleAllocationQuerySet:
         return RefundVehicleAllocationQuerySet(self.model, using=self._db)
 
