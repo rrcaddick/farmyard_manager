@@ -458,8 +458,8 @@ class TestBaseEntranceRecord:
         ("item_type", "visitor_count", "expected_price"),
         [
             (ItemTypeChoices.PUBLIC, 2, Decimal("100.00")),
-            (ItemTypeChoices.GROUP, 5, Decimal("75.00")),
-            (ItemTypeChoices.ONLINE, 1, Decimal("50.00")),
+            (ItemTypeChoices.GROUP, 5, None),
+            (ItemTypeChoices.ONLINE, 1, None),
         ],
         ids=["public_item", "group_item", "online_item"],
     )
@@ -488,7 +488,8 @@ class TestBaseEntranceRecord:
         assert item.visitor_count == visitor_count
         assert item.applied_price == expected_price
         assert item.created_by == user
-        mock_get_price.assert_called_once()
+        if expected_price is not None:
+            mock_get_price.assert_called_once()
 
     def test_add_item_with_custom_price(self, fake_entrance_record_factory):
         """Test adding item with custom applied price."""

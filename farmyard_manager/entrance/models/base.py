@@ -143,6 +143,8 @@ class BaseItem(
     applied_price = models.DecimalField(
         max_digits=10,
         decimal_places=2,
+        null=True,
+        blank=True,
     )
 
     class Meta:
@@ -164,7 +166,11 @@ class BaseItem(
 
     @property
     def amount_due(self):
-        return self.visitor_count * self.applied_price
+        """
+        Total amount due for this item. None public items have
+        different settlements paths
+        """
+        return self.visitor_count * (self.applied_price or 0)
 
     @property
     def snake_case_model_name(self):
@@ -372,9 +378,10 @@ class BaseEntranceRecord(
         applied_price=None,
     ):
         # Get price for this type
-        applied_price = (
-            Pricing.objects.get_price() if applied_price is None else applied_price
-        )
+        if applied_price is None:
+            applied_price = (
+                None if item_type != "public" else Pricing.objects.get_price()
+            )
 
         # Create the item using the dynamic relationship
         kwargs = {
