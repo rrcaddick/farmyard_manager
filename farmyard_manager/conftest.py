@@ -1,6 +1,7 @@
 import pytest
 
 from farmyard_manager.core.tests.factories import FakeModelFactory
+from farmyard_manager.entrance.tests.models.factories import PricingFactory
 from farmyard_manager.users.models import User
 from farmyard_manager.users.tests.factories import UserFactory
 
@@ -26,3 +27,11 @@ def fake_model_factory():
     factory = FakeModelFactory()
     yield factory.build_model
     factory.cleanup()
+
+
+@pytest.fixture(autouse=True)
+def with_pricing():
+    def _with_pricing(**kwargs):
+        PricingFactory.create(**kwargs)
+
+    return _with_pricing

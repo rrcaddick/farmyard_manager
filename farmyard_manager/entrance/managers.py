@@ -1,7 +1,9 @@
 from datetime import date
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import overload
 
 from django.db import models
 from django.db import transaction
@@ -54,9 +56,32 @@ class PricingManager(models.Manager["Pricing"]):
     def get_queryset(self) -> PricingQuerySet:
         return PricingQuerySet(self.model, using=self._db)
 
-    def get_price(self, date: datetime | date | None = None) -> "Pricing | None":
+    @overload
+    def get_price(
+        self,
+        date: datetime | date | None = None,
+        fallback: Decimal = ...,
+    ) -> "Pricing": ...
+
+    @overload
+    def get_price(
+        self,
+        date: datetime | date | None = None,
+        fallback: None = None,
+    ) -> "Pricing | None": ...
+
+    def get_price(
+        self,
+        date: datetime | date | None = None,
+        fallback: Decimal | None = None,
+    ) -> "Pricing | None":
         """Wrapper method to get price directly from manager"""
-        return self.get_queryset().get_price(date)
+        pricing = self.get_queryset().get_price(date)
+
+        if pricing is None and fallback is not None:
+            return self.model(price=fallback)
+
+        return pricing
 
 
 class TicketQuerySet(SoftDeletableQuerySet["Ticket"], models.QuerySet["Ticket"]):

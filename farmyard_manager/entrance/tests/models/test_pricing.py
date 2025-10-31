@@ -1,10 +1,11 @@
 # ruff: noqa: ARG002
 from datetime import date
 from datetime import datetime
+from datetime import timedelta
 from decimal import Decimal
-from unittest.mock import patch
 
 import pytest
+from django.utils import timezone
 
 from farmyard_manager.entrance.models.pricing import Pricing
 from farmyard_manager.entrance.tests.models.factories import PricingFactory
@@ -67,156 +68,135 @@ class TestPricingQuerySet:
         PricingFactory(
             start_date=date(2024, 6, 1),
             end_date=date(2024, 6, 30),
-            price=Decimal("100.00"),
         )
 
         result = Pricing.objects.get_price(date(2024, 7, 15))
         assert result is None
 
+    def test_seasonal_pricing(self):
+        """Ensures the correct price is returned for weekdays and weekends"""
+        monday = date(2024, 6, 3)
+        week_day_price = Decimal("100.00")
+        weekend_price = Decimal("120.00")
+
+        # Create weekday pricing
+        PricingFactory(as_weekday=True, start_date=monday, price=week_day_price)
+
+        # Create weekend pricing
+        PricingFactory(as_weekend=True, start_date=monday, price=weekend_price)
+
+        for i in range(7):  # Loop through Monday-Sunday
+            current_day = monday + timedelta(days=i)
+            pricing = Pricing.objects.get_price(current_day)
+
+            assert pricing is not None
+
+            if current_day.weekday() < 5:  # noqa: PLR2004
+                assert pricing.price == week_day_price
+                assert pricing.price_type == Pricing.PricingTypes.WEEKDAY
+            else:  # Saturday-Sunday
+                assert pricing.price == weekend_price
+                assert pricing.price_type == Pricing.PricingTypes.WEEKEND
+
     @pytest.mark.parametrize(
-        ("test_date", "day_name"),
+        ("price_type", "price"),
         [
-            (date(2024, 6, 3), "Monday"),
-            (date(2024, 6, 4), "Tuesday"),
-            (date(2024, 6, 5), "Wednesday"),
-            (date(2024, 6, 6), "Thursday"),
-            (date(2024, 6, 7), "Friday"),
+            (Pricing.PricingTypes.PEAK_DAY, Decimal("150.00")),
+            (Pricing.PricingTypes.PUBLIC_HOLIDAY, Decimal("150.00")),
+            (Pricing.PricingTypes.SCHOOL_HOLIDAY, Decimal("150.00")),
+        ],
+        ids=[
+            "peak_pricing",
+            "public_holiday_pricing",
+            "school_holiday_pricing",
         ],
     )
-    def test_get_price_weekday_pricing(
-        self,
-        base_seasonal_pricing,
-        test_date,
-        day_name,
-    ):
-        """Should return weekday pricing for Monday-Friday"""
-        result = Pricing.objects.get_price(test_date)
+    def test_special_pricing(self, price_type, price):
+        """Should return special pricing over seasonal pricing"""
+        week_day_price = Decimal("100.00")
+        weekend_price = Decimal("120.00")
 
-        assert result is not None
-        assert result.price == Decimal("100.00")
-        assert result.price_type == Pricing.PricingTypes.WEEKDAY
+        # Create weekday pricing
+        PricingFactory(as_weekday=True, price=week_day_price)
 
-    @pytest.mark.parametrize(
-        ("test_date", "day_name"),
-        [
-            (date(2024, 6, 1), "Saturday"),
-            (date(2024, 6, 2), "Sunday"),
-            (date(2024, 6, 8), "Saturday"),
-            (date(2024, 6, 9), "Sunday"),
-        ],
-    )
-    def test_get_price_weekend_pricing(
-        self,
-        base_seasonal_pricing,
-        test_date,
-        day_name,
-    ):
-        """Should return weekend pricing for Saturday-Sunday"""
-        result = Pricing.objects.get_price(test_date)
+        # Create weekend pricing
+        PricingFactory(as_weekend=True, price=weekend_price)
 
-        assert result is not None
-        assert result.price == Decimal("150.00")
-        assert result.price_type == Pricing.PricingTypes.WEEKEND
+        # Create peak day pricing overlapping a weekend
+        PricingFactory(price_type=price_type, price=price)
 
-    def test_get_price_excludes_non_matching_seasonal_type(self, base_seasonal_pricing):
-        """Should exclude weekday pricing on weekends and vice versa"""
-        # Test weekend date - should not get weekday pricing
-        weekend_result = Pricing.objects.get_price(date(2024, 6, 1))  # Saturday
-        assert weekend_result is not None
+        pricing = Pricing.objects.get_price()
 
-        assert weekend_result.price_type == Pricing.PricingTypes.WEEKEND
-        assert weekend_result.price == Decimal("150.00")
-
-        # Test weekday date - should not get weekend pricing
-        weekday_result = Pricing.objects.get_price(date(2024, 6, 3))  # Monday
-        assert weekday_result is not None
-
-        assert weekday_result.price_type == Pricing.PricingTypes.WEEKDAY
-        assert weekday_result.price == Decimal("100.00")
-
-    def test_get_price_highest_price_wins(self, overlapping_pricing):
-        """Should return the highest priced option when multiple pricing rules match"""
-        # July 4th 2024 is a Thursday - should get peak day (highest price)
-        result = Pricing.objects.get_price(date(2024, 7, 4))
-
-        assert result is not None
-        assert result.price == Decimal("300.00")
-        assert result.price_type == Pricing.PricingTypes.PEAK_DAY
-
-    def test_get_price_school_holiday_beats_seasonal(self, overlapping_pricing):
-        """Should return school holiday pricing over seasonal pricing"""
-        # July 15th 2024 is a Monday - school holiday should beat weekday
-        result = Pricing.objects.get_price(date(2024, 7, 15))
-
-        assert result is not None
-        assert result.price == Decimal("200.00")
-        assert result.price_type == Pricing.PricingTypes.SCHOOL_HOLIDAY
-
-    def test_get_price_school_holiday_on_weekend(self, overlapping_pricing):
-        """Should return school holiday pricing over weekend pricing"""
-        # July 6th 2024 is a Saturday - school holiday should beat weekend
-        result = Pricing.objects.get_price(date(2024, 7, 6))
-
-        assert result is not None
-        assert result.price == Decimal("200.00")
-        assert result.price_type == Pricing.PricingTypes.SCHOOL_HOLIDAY
-
-    def test_get_price_public_holiday_standalone(self, overlapping_pricing):
-        """Should return public holiday pricing when it's the only match"""
-        # December 25th 2024 is a Wednesday - public holiday should apply
-        result = Pricing.objects.get_price(date(2024, 12, 25))
-
-        assert result is not None
-        assert result.price == Decimal("250.00")
-        assert result.price_type == Pricing.PricingTypes.PUBLIC_HOLIDAY
+        assert pricing is not None
+        assert pricing.price == price
+        assert pricing.price_type == price_type
 
     @pytest.mark.parametrize(
-        ("input_date", "expected_type"),
+        ("input_date", "expected_price_type", "expected_price"),
         [
             (
                 datetime(2024, 6, 3, 14, 30),  # noqa: DTZ001
-                "weekday",
+                Pricing.PricingTypes.WEEKDAY,
+                Decimal("100.00"),
             ),  # Monday datetime
             (
-                datetime(2024, 6, 1, 9, 0),  # noqa: DTZ001
-                "weekend",
+                datetime(2024, 6, 8, 9, 0),  # noqa: DTZ001
+                Pricing.PricingTypes.WEEKEND,
+                Decimal("150.00"),
             ),  # Saturday datetime
-            (date(2024, 6, 3), "weekday"),  # Monday date
-            (date(2024, 6, 1), "weekend"),  # Saturday date
+            (
+                date(2024, 6, 3),
+                Pricing.PricingTypes.WEEKDAY,
+                Decimal("100.00"),
+            ),  # Monday date
+            (
+                date(2024, 6, 8),
+                Pricing.PricingTypes.WEEKEND,
+                Decimal("150.00"),
+            ),  # Saturday date
+        ],
+        ids=[
+            "monday_datetime",
+            "saturday_datetime",
+            "monday_date",
+            "saturday_date",
         ],
     )
-    def test_get_price_handles_datetime_and_date_objects(
+    def test_get_price_handles_date_and_datetime_objects(
         self,
-        base_seasonal_pricing,
         input_date,
-        expected_type,
+        expected_price_type,
+        expected_price,
     ):
         """Should handle both datetime and date objects correctly"""
+        # Create pricing
+        monday = date(2024, 6, 3)
+        PricingFactory(as_weekday=True, start_date=monday, price=Decimal("100.00"))
+        PricingFactory(as_weekend=True, start_date=monday, price=Decimal("150.00"))
+
         result = Pricing.objects.get_price(input_date)
 
         assert result is not None
-        if expected_type == "weekday":
-            assert result.price_type == Pricing.PricingTypes.WEEKDAY
-            assert result.price == Decimal("100.00")
-        else:
-            assert result.price_type == Pricing.PricingTypes.WEEKEND
-            assert result.price == Decimal("150.00")
+        assert result.price_type == expected_price_type
+        assert result.price == expected_price
 
-    @patch("django.utils.timezone.now")
     def test_get_price_with_none_defaults_to_today(
         self,
-        mock_now,
-        base_seasonal_pricing,
     ):
-        """Should default to today's date when lookup_date is None"""
-        # Mock today as a Monday
-        mock_now.return_value.date.return_value = date(2024, 6, 3)
+        """Should default to today's date when None is provided"""
 
-        result = Pricing.objects.get_price(None)
+        # Ensure pricing record exists
+        PricingFactory()
+        pricing = Pricing.objects.get_price()
 
-        assert result is not None
-        assert result.price_type == Pricing.PricingTypes.WEEKDAY
-        mock_now.assert_called_once()
+        price_type = (
+            Pricing.PricingTypes.WEEKEND
+            if timezone.localdate().weekday() in (5, 6)
+            else Pricing.PricingTypes.WEEKDAY
+        )
+
+        assert pricing is not None
+        assert pricing.price_type == price_type
 
     def test_get_price_multiple_overlapping_different_prices(self):
         """Should return highest price when multiple different holiday types overlap"""

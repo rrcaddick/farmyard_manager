@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 
 class Vehicle(UUIDModelMixin, SoftDeletableModel, TimeStampedModel, models.Model):
+    # TODO: is_blacklisted and security_fail_count can be refactored into @property
     tickets: "QuerySet[Ticket]"
 
     make = models.CharField(max_length=50)
@@ -130,7 +131,7 @@ class Vehicle(UUIDModelMixin, SoftDeletableModel, TimeStampedModel, models.Model
             self.is_blacklisted = False
             self.save(update_fields=["is_blacklisted"])
 
-    def get_paid_item(
+    def get_public_item(
         self,
         payment: "Payment",
     ) -> "TicketItem | ReEntryItem":
@@ -156,11 +157,11 @@ class Vehicle(UUIDModelMixin, SoftDeletableModel, TimeStampedModel, models.Model
         entrance_record = ticket if ticket else re_entry
         assert entrance_record is not None
 
-        return entrance_record.payable_item
+        return entrance_record.public_item
 
     def linked_to_payment(self, payment: "Payment"):
         try:
-            self.get_paid_item(payment)
+            self.get_public_item(payment)
         except ValueError:
             return False
         else:

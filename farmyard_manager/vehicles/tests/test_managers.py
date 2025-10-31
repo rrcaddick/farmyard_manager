@@ -324,14 +324,14 @@ class TestSecurityFailManager:
         """Test filtering security fails by type."""
         # Create security fails of different types
         target_fails = SecurityFailFactory.create_batch(2, failure_type=failure_type)
-        raandom_failure_type = (
+        random_failure_type = (
             SecurityFail.FailureChoices.OTHER
             if failure_type != SecurityFail.FailureChoices.OTHER
             else SecurityFail.FailureChoices.ALCOHOL_POSSESSION
         )
         SecurityFailFactory.create_batch(
             3,
-            failure_type=raandom_failure_type,
+            failure_type=random_failure_type,
         )
 
         result = SecurityFail.objects.by_failure_type(failure_type)

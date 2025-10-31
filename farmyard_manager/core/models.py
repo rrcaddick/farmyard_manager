@@ -106,6 +106,9 @@ class TransitionTextChoices(models.TextChoices):
 
     @classmethod
     def validate_choice_transition(cls, prev_choice, new_choice):
+        if prev_choice == new_choice:
+            return True
+
         prev_val = prev_choice.value if isinstance(prev_choice, cls) else prev_choice
         new_val = new_choice.value if isinstance(new_choice, cls) else new_choice
 

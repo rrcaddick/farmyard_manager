@@ -1,7 +1,6 @@
 from typing import TYPE_CHECKING
 
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
 from django.db import models
 from django.db import transaction
 from model_utils.models import SoftDeletableModel
@@ -13,6 +12,7 @@ from farmyard_manager.core.fields import SnakeCaseFK
 from farmyard_manager.core.models import CleanBeforeSaveModel
 from farmyard_manager.core.models import UUIDModelMixin
 from farmyard_manager.core.models import UUIDRefNumberModelMixin
+from farmyard_manager.payments.enums import RefundVehicleAllocationStatusChoices
 from farmyard_manager.payments.models import Payment
 from farmyard_manager.payments.models import RefundVehicleAllocation
 from farmyard_manager.utils.int_utils import is_int
@@ -138,7 +138,7 @@ class BaseItem(
         choices=ItemTypeChoices.choices,
     )
 
-    visitor_count = models.IntegerField(validators=[MinValueValidator(1)])
+    visitor_count = models.PositiveIntegerField()
 
     applied_price = models.DecimalField(
         max_digits=10,
@@ -152,6 +152,16 @@ class BaseItem(
 
     def __str__(self):
         return f"{self.visitor_count} {self.item_type} visitors at {self.applied_price}"
+
+    def save(self, *args, **kwargs):
+        if self.applied_price is None and self.item_type == self.ItemTypeChoices.PUBLIC:
+            price = Pricing.objects.get_price()
+            if price is None:
+                error_message = "No pricing available for public items"
+                raise ValidationError(error_message)
+
+            self.applied_price = price.price
+        return super().save(*args, **kwargs)
 
     def clean(self):
         validate_text_choice(
@@ -179,20 +189,20 @@ class BaseItem(
     @property
     def processed_refund_visitor_count(self):
         return sum(
-            allocation.visitor_count
+            allocation.visitor_count or 0
             for allocation in self.refund_allocations.filter(
-                status=RefundVehicleAllocation.RefundVehicleAllocationStatusChoices.SETTLED,
+                status=RefundVehicleAllocationStatusChoices.SETTLED,
             )
         )
 
     @property
     def pending_refund_visitor_count(self):
         return sum(
-            allocation.visitor_count
+            allocation.visitor_count or 0
             for allocation in self.refund_allocations.filter(
                 status__in=[
-                    RefundVehicleAllocation.RefundVehicleAllocationStatusChoices.PENDING_COUNT,
-                    RefundVehicleAllocation.RefundVehicleAllocationStatusChoices.COUNTED,
+                    RefundVehicleAllocationStatusChoices.PENDING_COUNT,
+                    RefundVehicleAllocationStatusChoices.COUNTED,
                 ],
             )
         )
@@ -205,13 +215,17 @@ class BaseItem(
             - self.pending_refund_visitor_count
         )
 
-    # TODO: This is no longer needed. Remove once tests pass
     def get_price(self):
-        if self.item_type is None:
-            error_message = "Set item type befor getting price"
-            raise ValueError(error_message)
+        """Gets the public price for the day"""
+        if self.item_type == self.ItemTypeChoices.PUBLIC:
+            pricing = Pricing.objects.get_price()
+            if not pricing:
+                error_message = "No pricing available for public items"
+                raise ValidationError(error_message)
 
-        return Pricing.objects.get_price()
+            return pricing.price
+
+        return None
 
     def edit(
         self,
@@ -331,7 +345,7 @@ class BaseEntranceRecord(
         return sum(item.visitor_count for item in self.items)
 
     @property
-    def total_due_visitors(self):
+    def total_due_count(self):
         return sum(
             item.visitor_count
             for item in self.items
@@ -346,12 +360,12 @@ class BaseEntranceRecord(
         )
 
     @property
-    def public_ticket_item(self):
+    def public_item(self):
         """
         The public entrance item, if it exists. Contains the visitor count
         for paid visitors. Used in refund vehicle allocations.
         """
-        return self.items.filter(item_type=ItemTypeChoices.PUBLIC)
+        return self.items.filter(item_type=ItemTypeChoices.PUBLIC).first()
 
     def update_status(self, new_status: str, performed_by: "User"):
         prev_status = self.status
@@ -377,20 +391,17 @@ class BaseEntranceRecord(
         created_by: "User",
         applied_price=None,
     ):
-        # Get price for this type
-        if applied_price is None:
-            applied_price = (
-                None if item_type != "public" else Pricing.objects.get_price()
-            )
-
         # Create the item using the dynamic relationship
         kwargs = {
             self.snake_case_model_name: self,
             "created_by": created_by,
             "item_type": item_type,
             "visitor_count": visitor_count,
-            "applied_price": applied_price,
         }
+
+        if applied_price is not None:
+            kwargs["applied_price"] = applied_price
+
         return self.item_model.objects.create(**kwargs)
 
     # TODO: Refactor to work with item instance - Must be moved to inheriting class

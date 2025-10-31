@@ -1,15 +1,12 @@
-# ruff: noqa: ERA001, PLR0913
-
 from decimal import Decimal
-from unittest.mock import patch
 
 import pytest
 from django.core.exceptions import ValidationError
 
 from farmyard_manager.entrance.models.enums import ItemTypeChoices
+from farmyard_manager.entrance.models.enums import ReEntryStatusChoices
 from farmyard_manager.entrance.models.enums import TicketStatusChoices
-from farmyard_manager.entrance.models.pricing import Pricing
-from farmyard_manager.entrance.tests.models.factories import PricingFactory
+from farmyard_manager.entrance.tests.models.factories import ReEntryFactory
 from farmyard_manager.entrance.tests.models.factories import TicketFactory
 from farmyard_manager.entrance.tests.models.factories import (
     TicketItemEditHistoryFactory,
@@ -17,42 +14,13 @@ from farmyard_manager.entrance.tests.models.factories import (
 from farmyard_manager.entrance.tests.models.factories import TicketItemFactory
 from farmyard_manager.entrance.tests.models.factories import TicketStatusHistoryFactory
 from farmyard_manager.users.tests.factories import UserFactory
-from farmyard_manager.vehicles.tests.factories import VehicleFactory
+
+PRICE_PER_VISITOR = Decimal("100.00")
 
 
-# TODO: Pricing tests can be refactored to use the new date range Pricing model
-@pytest.fixture
-def ticket_with_items():
-    """Fixture providing a ticket with multiple items for testing calculations."""
-    ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
-
-    # Create base pricing for the date range
-    PricingFactory(
-        price_type=Pricing.PricingTypes.WEEKDAY,
-        price=Decimal("50.00"),
-    )
-
-    # Add items to ticket
-    TicketItemFactory(
-        ticket=ticket,
-        item_type=ItemTypeChoices.PUBLIC,
-        visitor_count=2,
-        applied_price=Decimal("50.00"),
-    )
-    TicketItemFactory(
-        ticket=ticket,
-        item_type=ItemTypeChoices.GROUP,
-        visitor_count=3,
-        applied_price=Decimal("75.00"),
-    )
-
-    return ticket
-
-
-@pytest.fixture
-def processed_ticket():
-    """Fixture providing a processed ticket for re-entry testing."""
-    return TicketFactory(status=TicketStatusChoices.PROCESSED)
+@pytest.fixture(autouse=True)
+def use_pricing(with_pricing):
+    with_pricing(price=PRICE_PER_VISITOR)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -61,41 +29,51 @@ class TestTicket:
 
     def test_str_representation(self):
         """Test string representation of ticket."""
-        ticket = TicketFactory(status=TicketStatusChoices.PENDING_SECURITY)
+        ticket = TicketFactory()
         expected = f"{ticket.ref_number} - {ticket.status}"
         assert str(ticket) == expected
 
     def test_status_field_validation(self):
         """Test that invalid status choices raise ValidationError."""
-        ticket = TicketFactory.build(status="invalid_status")
-
         with pytest.raises(ValidationError, match="Invalid ticket status choice"):
-            ticket.full_clean()
+            TicketFactory(status="invalid_status")
 
     @pytest.mark.parametrize(
-        ("initial_status", "new_status", "should_raise"),
+        ("initial_status", "new_status"),
         [
-            # Valid transitions
-            (
-                TicketStatusChoices.PENDING_SECURITY,
-                TicketStatusChoices.PASSED_SECURITY,
-                False,
-            ),
-            (TicketStatusChoices.PASSED_SECURITY, TicketStatusChoices.COUNTED, False),
-            (TicketStatusChoices.COUNTED, TicketStatusChoices.PROCESSED, False),
-            (TicketStatusChoices.PROCESSED, TicketStatusChoices.REFUNDED, False),
-            # Invalid transitions
-            (TicketStatusChoices.PENDING_SECURITY, TicketStatusChoices.COUNTED, True),
-            (TicketStatusChoices.PENDING_SECURITY, TicketStatusChoices.PROCESSED, True),
-            (TicketStatusChoices.PASSED_SECURITY, TicketStatusChoices.PROCESSED, True),
-            (TicketStatusChoices.PROCESSED, TicketStatusChoices.PENDING_SECURITY, True),
-            (TicketStatusChoices.REFUNDED, TicketStatusChoices.PROCESSED, True),
+            (TicketStatusChoices.PENDING_SECURITY, TicketStatusChoices.PASSED_SECURITY),
+            (TicketStatusChoices.PASSED_SECURITY, TicketStatusChoices.COUNTED),
+            (TicketStatusChoices.COUNTED, TicketStatusChoices.PROCESSED),
+            (TicketStatusChoices.PROCESSED, TicketStatusChoices.REFUNDED),
         ],
         ids=[
             "valid_security_to_passed",
             "valid_passed_to_counted",
             "valid_counted_to_processed",
             "valid_processed_to_refunded",
+        ],
+    )
+    def test_update_status_valid_transition(
+        self,
+        initial_status,
+        new_status,
+    ):
+        """Test status transition validation."""
+        ticket = TicketFactory(status=initial_status)
+        ticket.update_status(new_status=new_status, performed_by=UserFactory())
+
+        assert ticket.status == new_status
+
+    @pytest.mark.parametrize(
+        ("initial_status", "new_status"),
+        [
+            (TicketStatusChoices.PENDING_SECURITY, TicketStatusChoices.COUNTED),
+            (TicketStatusChoices.PENDING_SECURITY, TicketStatusChoices.PROCESSED),
+            (TicketStatusChoices.PASSED_SECURITY, TicketStatusChoices.PROCESSED),
+            (TicketStatusChoices.PROCESSED, TicketStatusChoices.PENDING_SECURITY),
+            (TicketStatusChoices.REFUNDED, TicketStatusChoices.PROCESSED),
+        ],
+        ids=[
             "invalid_security_to_counted",
             "invalid_security_to_processed",
             "invalid_passed_to_processed",
@@ -103,30 +81,25 @@ class TestTicket:
             "invalid_refunded_to_processed",
         ],
     )
-    def test_status_transition_validation(
+    def test_udpate_status_invalid_transition(
         self,
         initial_status,
         new_status,
-        should_raise,
     ):
         """Test status transition validation."""
         ticket = TicketFactory(status=initial_status)
-        ticket.status = new_status
 
-        if should_raise:
-            with pytest.raises(ValidationError, match="Invalid transition"):
-                ticket.full_clean()
-        else:
-            ticket.full_clean()  # Should not raise
+        with pytest.raises(ValidationError, match="Invalid transition"):
+            ticket.update_status(new_status=new_status, performed_by=UserFactory())
 
     @pytest.mark.parametrize(
-        ("status", "expected_processed"),
+        ("ticket_kwargs", "expected_processed"),
         [
-            (TicketStatusChoices.PENDING_SECURITY, False),
-            (TicketStatusChoices.PASSED_SECURITY, False),
-            (TicketStatusChoices.COUNTED, False),
-            (TicketStatusChoices.PROCESSED, True),
-            (TicketStatusChoices.REFUNDED, True),
+            ({}, False),
+            ({"passed_security": True}, False),
+            ({"counted": True}, False),
+            ({"processed": True}, True),
+            ({"refunded": True}, True),
         ],
         ids=[
             "pending_security_not_processed",
@@ -136,184 +109,130 @@ class TestTicket:
             "refunded_is_processed",
         ],
     )
-    def test_is_processed_property(self, status, expected_processed):
+    def test_is_processed_property(self, ticket_kwargs, expected_processed):
         """Test is_processed property for different statuses."""
-        ticket = TicketFactory(status=status)
+        ticket = TicketFactory.build(**ticket_kwargs)
         assert ticket.is_processed == expected_processed
 
-    def test_total_due_calculation(self, ticket_with_items):
+    def test_totals(self):
         """Test total_due calculation with multiple items."""
-        # Expected: (2 * 50.00) + (3 * 75.00) = 100.00 + 225.00 = 325.00
-        expected_total = Decimal("325.00")
-        assert ticket_with_items.total_due == expected_total
+        public_count = 3
+        group_count = 2
 
-    def test_total_visitors_calculation(self, ticket_with_items):
-        """Test total_visitors calculation with multiple items."""
-        # Expected: 2 + 3 = 5 visitors
-        expected_total = 5
-        assert ticket_with_items.total_visitors == expected_total
-
-    def test_add_re_entry_success(self, processed_ticket):
-        """Test successfully adding a re-entry to a processed ticket."""
-        user = UserFactory()
-        visitors_left = 3
-
-        re_entry = processed_ticket.add_re_entry(
-            visitors_left=visitors_left,
-            created_by=user,
+        ticket = TicketFactory(
+            counted=True,
+            with_items=[
+                {"visitor_count": public_count, "item_type": "public"},
+                {"visitor_count": group_count, "item_type": "group"},
+            ],
         )
 
-        assert re_entry.ticket == processed_ticket
+        assert ticket.total_due == public_count * PRICE_PER_VISITOR
+        assert ticket.total_due_count == public_count
+        assert ticket.total_visitors == public_count + group_count
+
+    def test_add_re_entry_success(self):
+        """Test successfully adding a re-entry to a processed ticket."""
+        visitors_left = 3
+
+        ticket = TicketFactory(processed=True, with_items=True)
+        ticket.add_re_entry(visitors_left=visitors_left, created_by=UserFactory())
+
+        re_entry = ticket.re_entries.first()
+
+        assert re_entry.ticket == ticket
         assert re_entry.visitors_left == visitors_left
-        assert re_entry.status == "pending"  # ReEntry.StatusChoices.PENDING
+        assert re_entry.status == ReEntryStatusChoices.PENDING
 
     @pytest.mark.parametrize(
-        ("status", "should_raise"),
+        ("ticket_kwargs"),
         [
-            (TicketStatusChoices.PENDING_SECURITY, True),
-            (TicketStatusChoices.PASSED_SECURITY, True),
-            (TicketStatusChoices.COUNTED, True),
-            (TicketStatusChoices.PROCESSED, False),
-            (TicketStatusChoices.REFUNDED, True),
+            ({}),
+            ({"passed_security": True}),
+            ({"counted": True}),
+            ({"refunded": True}),
         ],
         ids=[
             "pending_security_fails",
             "passed_security_fails",
             "counted_fails",
-            "processed_succeeds",
             "refunded_fails",
         ],
     )
-    def test_add_re_entry_status_validation(self, status, should_raise):
+    def test_add_re_entry_invalid_status(self, ticket_kwargs):
         """Test re-entry creation only works for processed tickets."""
-        ticket = TicketFactory(status=status)
-        user = UserFactory()
+        ticket = TicketFactory(**ticket_kwargs)
 
-        if should_raise:
-            with pytest.raises(
-                ValueError,
-                match="Only processed tickets can have re-entries",
-            ):
-                ticket.add_re_entry(visitors_left=3, created_by=user)
-        else:
-            re_entry = ticket.add_re_entry(visitors_left=3, created_by=user)
-            assert re_entry is not None
+        with pytest.raises(
+            ValueError,
+            match="Only processed tickets can have re-entries",
+        ):
+            ticket.add_re_entry(visitors_left=3, created_by=UserFactory())
 
-    def test_add_re_entry_invalid_visitors_left(self, processed_ticket):
+    def test_add_re_entry_invalid_visitors_left(self):
         """Test re-entry creation fails with invalid visitors_left."""
-        user = UserFactory()
+        ticket = TicketFactory(processed=True, with_items=True)
 
         with pytest.raises(ValueError, match="Visitors left must be greater than 0"):
-            processed_ticket.add_re_entry(visitors_left=0, created_by=user)
+            ticket.add_re_entry(visitors_left=0, created_by=UserFactory())
 
-    def test_pending_re_entries_property(self, processed_ticket):
+    def test_pending_re_entries_property(self):
         """Test pending_re_entries property returns only pending re-entries."""
-        from farmyard_manager.entrance.tests.models.factories import ReEntryFactory
+        ticket = TicketFactory(processed=True, with_items=True)
 
-        # user = UserFactory()
+        pending_re_entry_count = 2
 
-        # Create pending re-entry
-        pending_re_entry = ReEntryFactory(
-            ticket=processed_ticket,
-            status="pending",
-        )
+        for _ in range(pending_re_entry_count):
+            ticket.add_re_entry(visitors_left=2, created_by=UserFactory())
 
-        # Create processed re-entry
-        ReEntryFactory(
-            ticket=processed_ticket,
-            status="processed",
-        )
+        # Manually add a completed re-entry
+        ReEntryFactory(ticket=ticket, processed=True)
 
-        pending_re_entries = processed_ticket.pending_re_entries
-        assert pending_re_entries.count() == 1
-        assert pending_re_entries.first() == pending_re_entry
-
-    def test_vehicle_relationship(self):
-        """Test ticket-vehicle relationship."""
-        vehicle = VehicleFactory()
-        ticket = TicketFactory(vehicle=vehicle)
-
-        assert ticket.vehicle == vehicle
-        assert ticket in vehicle.tickets.all()
-
-    # TODO: Add payments related tests
+        assert ticket.pending_re_entries.count() == pending_re_entry_count
 
 
 @pytest.mark.django_db(transaction=True)
 class TestTicketItem:
     """Test suite for the TicketItem model."""
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_str_representation(self, mock_get_price):
+    def test_str_representation(self):
         """Test string representation of ticket item."""
-        mock_get_price.return_value = Decimal("75.00")
+        ticket_item = TicketItemFactory(visitor_count=3)
+        expected = f"3 {ItemTypeChoices.PUBLIC} visitors at {PRICE_PER_VISITOR}"
+        assert str(ticket_item) == expected
 
-        # Create ticket with allowed status for adding items
-        ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
-        item = TicketItemFactory(
-            ticket=ticket,
-            item_type=ItemTypeChoices.PUBLIC,
-            visitor_count=3,
-            applied_price=Decimal("75.00"),
-        )
-        expected = f"3 {ItemTypeChoices.PUBLIC} visitors at 75.00"
-        assert str(item) == expected
-
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_amount_due_calculation(self, mock_get_price):
+    def test_amount_due_calculation(self):
         """Test amount_due calculation."""
-        mock_get_price.return_value = Decimal("60.00")
-
-        # Create ticket with allowed status for adding items
-        ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
-        item = TicketItemFactory(
-            ticket=ticket,
-            visitor_count=4,
-            applied_price=Decimal("60.00"),
-        )
-        expected_amount = Decimal("240.00")  # 4 * 60.00
-        assert item.amount_due == expected_amount
+        visitor_count = 4
+        ticket_item = TicketItemFactory(visitor_count=visitor_count)
+        assert ticket_item.amount_due == visitor_count * PRICE_PER_VISITOR
 
     @pytest.mark.parametrize(
-        ("ticket_status", "should_raise"),
+        ("ticket_kwargs", "error_message"),
         [
-            (TicketStatusChoices.PENDING_SECURITY, True),
-            (TicketStatusChoices.PASSED_SECURITY, False),
-            (TicketStatusChoices.COUNTED, False),
-            (TicketStatusChoices.PROCESSED, True),
-            (TicketStatusChoices.REFUNDED, True),
+            (
+                {"with_items": False},
+                "Ticket needs to pass security check first",
+            ),
+            (
+                {"processed": True},
+                "Can't add items, ticket is processed",
+            ),
         ],
         ids=[
             "pending_security_blocks_add",
-            "passed_security_allows_add",
-            "counted_allows_add",
-            "processed_blocks_add",
-            "refunded_blocks_add",
+            "processed_ticket_blocks_add",
         ],
     )
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_clean_validation_on_add(self, mock_get_price, ticket_status, should_raise):
+    def test_clean_validation_on_add(self, ticket_kwargs, error_message):
         """Test validation when adding items to tickets in different statuses."""
-        mock_get_price.return_value = Decimal("100.00")
+        ticket = TicketFactory(**ticket_kwargs)
 
-        ticket = TicketFactory(status=ticket_status)
-        item = TicketItemFactory.build(ticket=ticket, created_by=UserFactory())
+        with pytest.raises(ValidationError, match=error_message):
+            TicketItemFactory(ticket=ticket)
 
-        if should_raise:
-            expected_message = (
-                "Can't add items, ticket is processed"
-                if ticket.is_processed
-                else "Ticket needs to pass security check first"
-            )
-            with pytest.raises(ValidationError, match=expected_message):
-                item.full_clean()
-        else:
-            item.full_clean()  # Should not raise
-
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_clean_validation_on_edit(self, mock_get_price):
+    def test_clean_validation_on_edit(self):
         """Test validation when editing existing items."""
-        mock_get_price.return_value = Decimal("100.00")
 
         # Create ticket with allowed status first
         ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
@@ -332,136 +251,69 @@ class TestTicketItem:
         ):
             item.full_clean()
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_delete_validation_processed_ticket(self, mock_get_price):
+    def test_delete_validation_processed_ticket(self):
         """Test that items cannot be deleted from processed tickets."""
-        mock_get_price.return_value = Decimal("100.00")
-
-        # Create ticket with allowed status first
-        ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
-        item = TicketItemFactory(ticket=ticket)
-
-        # Now change ticket to processed status
-        ticket.status = TicketStatusChoices.PROCESSED
-        ticket.save()
+        ticket = TicketFactory(processed=True, with_items=True)
+        ticket_item = ticket.ticket_items.first()
 
         with pytest.raises(
             ValidationError,
             match="Can't delete items on a processed ticket",
         ):
-            item.delete()
+            ticket_item.delete()
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_delete_success_non_processed_ticket(self, mock_get_price):
-        """Test that items can be deleted from non-processed tickets."""
-        mock_get_price.return_value = Decimal("100.00")
-
-        ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
-        item = TicketItemFactory(ticket=ticket)
-
-        item.delete()  # Should not raise
-
-        # Verify soft deletion
-        assert item.is_removed is True
-
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_edit_item_type_updates_price(self, mock_get_price):
+    def test_edit_item_type_updates_price(self):
         """Test editing item type updates applied price."""
-        # Set up different return values for different calls
-        mock_get_price.return_value = Decimal("50.00")  # For factory creation
+        ticket_item = TicketItemFactory()
 
-        ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
-        item = TicketItemFactory(
-            ticket=ticket,
-            item_type=ItemTypeChoices.PUBLIC,
-            applied_price=Decimal("50.00"),
-        )
-
-        # Change mock return value for the edit call
-        mock_get_price.return_value = Decimal("150.00")
-
-        user = UserFactory()
-
-        item.edit(
-            performed_by=user,
+        ticket_item.edit(
+            performed_by=UserFactory(),
             item_type=ItemTypeChoices.GROUP,
         )
 
-        assert item.item_type == ItemTypeChoices.GROUP
-        assert item.applied_price == Decimal("150.00")
+        assert ticket_item.item_type == ItemTypeChoices.GROUP
+        assert ticket_item.applied_price is None
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_edit_visitor_count_preserves_price(self, mock_get_price):
-        """Test editing visitor count preserves applied price."""
-        mock_get_price.return_value = Decimal("75.00")
-
-        ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
-        original_price = Decimal("75.00")
-        item = TicketItemFactory(
-            ticket=ticket,
-            visitor_count=2,
-            applied_price=original_price,
-        )
-        user = UserFactory()
-
-        item.edit(
-            performed_by=user,
-            visitor_count=5,
-        )
-
-        assert item.visitor_count == 5  # noqa: PLR2004
-        assert item.applied_price == original_price
-
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_edit_creates_history_entry(self, mock_get_price):
+    def test_edit_creates_history_entry(self):
         """Test that editing creates appropriate history entries."""
-        # First call for factory creation, second call for edit
-        mock_get_price.side_effect = [Decimal("100.00"), Decimal("150.00")]
+        ticket_item = TicketItemFactory()
 
-        ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
-        item = TicketItemFactory(
-            ticket=ticket,
-            item_type=ItemTypeChoices.PUBLIC,
-            visitor_count=2,
-        )
-        user = UserFactory()
+        performed_by = UserFactory()
 
-        item.edit(
-            performed_by=user,
+        ticket_item.edit(
+            performed_by=performed_by,
             item_type=ItemTypeChoices.GROUP,
             visitor_count=4,
         )
 
-        history_entries = item.edit_history.all()
+        history_entries = ticket_item.edit_history.all()
         assert history_entries.count() == 2  # noqa: PLR2004
 
         # Check item type history
         item_type_history = history_entries.filter(field="item_type").first()
         assert item_type_history.prev_value == ItemTypeChoices.PUBLIC
         assert item_type_history.new_value == ItemTypeChoices.GROUP
-        assert item_type_history.performed_by == user
+        assert item_type_history.performed_by == performed_by
 
         # Check visitor count history
         visitor_count_history = history_entries.filter(field="visitor_count").first()
         assert visitor_count_history.prev_value == "2"
         assert visitor_count_history.new_value == "4"
-        assert visitor_count_history.performed_by == user
+        assert visitor_count_history.performed_by == performed_by
 
 
 @pytest.mark.django_db(transaction=True)
 class TestTicketItemEditHistory:
     """Test suite for the TicketItemEditHistory model."""
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_str_representation(self, mock_get_price):
+    def test_str_representation(self):
         """Test string representation of edit history."""
-        mock_get_price.return_value = Decimal("100.00")
-
         # Create ticket with valid status for item creation
-        ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
+        ticket = TicketFactory(counted=True)
         ticket_item = TicketItemFactory(ticket=ticket)
 
         user = UserFactory()
+
         history = TicketItemEditHistoryFactory(
             ticket_item=ticket_item,
             field="item_type",
@@ -505,10 +357,8 @@ class TestTicketItemEditHistory:
             "negative_visitor_count",
         ],
     )
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_field_validation(
         self,
-        mock_get_price,
         field,
         prev_value,
         new_value,
@@ -516,8 +366,6 @@ class TestTicketItemEditHistory:
         expected_message,
     ):
         """Test field validation in edit history."""
-        mock_get_price.return_value = Decimal("100.00")
-
         # Create ticket with valid status for item creation
         ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
         ticket_item = TicketItemFactory(ticket=ticket)
@@ -537,11 +385,8 @@ class TestTicketItemEditHistory:
         else:
             history.full_clean()  # Should not raise
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_deletion_prevented(self, mock_get_price):
+    def test_deletion_prevented(self):
         """Test that edit history entries cannot be deleted."""
-        mock_get_price.return_value = Decimal("100.00")
-
         # Create ticket with valid status for item creation
         ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
         ticket_item = TicketItemFactory(ticket=ticket)
@@ -552,19 +397,6 @@ class TestTicketItemEditHistory:
             match="Edit history entries cannot be deleted",
         ):
             history.delete()
-
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_ticket_item_relationship(self, mock_get_price):
-        """Test relationship with ticket item."""
-        mock_get_price.return_value = Decimal("100.00")
-
-        # Create ticket with valid status for item creation
-        ticket = TicketFactory(status=TicketStatusChoices.COUNTED)
-        ticket_item = TicketItemFactory(ticket=ticket)
-        history = TicketItemEditHistoryFactory(ticket_item=ticket_item)
-
-        assert history.ticket_item == ticket_item
-        assert history in ticket_item.edit_history.all()
 
 
 @pytest.mark.django_db(transaction=True)

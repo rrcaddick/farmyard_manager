@@ -20,6 +20,7 @@ class VehicleFactory(DjangoModelFactory[Vehicle]):
 
     class Meta:
         model = Vehicle
+        skip_postgeneration_save = True
 
 
 class SecurityFailFactory(DjangoModelFactory[SecurityFail]):
@@ -30,6 +31,7 @@ class SecurityFailFactory(DjangoModelFactory[SecurityFail]):
 
     class Meta:
         model = SecurityFail
+        skip_postgeneration_save = True
 
 
 class BlacklistFactory(DjangoModelFactory[Blacklist]):
@@ -40,3 +42,4 @@ class BlacklistFactory(DjangoModelFactory[Blacklist]):
 
     class Meta:
         model = Blacklist
+        skip_postgeneration_save = True

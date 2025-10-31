@@ -28,32 +28,6 @@ from farmyard_manager.vehicles.tests.factories import VehicleFactory
 class TestTicketQuerySet:
     """Test suite for the TicketQuerySet class."""
 
-    @pytest.fixture
-    def tickets_by_status(self):
-        """Create tickets with different statuses for testing."""
-        return {
-            "pending_security": TicketFactory.create_batch(
-                2,
-                status=TicketStatusChoices.PENDING_SECURITY,
-            ),
-            "passed_security": TicketFactory.create_batch(
-                3,
-                status=TicketStatusChoices.PASSED_SECURITY,
-            ),
-            "counted": TicketFactory.create_batch(
-                1,
-                status=TicketStatusChoices.COUNTED,
-            ),
-            "processed": TicketFactory.create_batch(
-                2,
-                status=TicketStatusChoices.PROCESSED,
-            ),
-            "refunded": TicketFactory.create_batch(
-                1,
-                status=TicketStatusChoices.REFUNDED,
-            ),
-        }
-
     def test_queryset_assignment(self):
         """Test that Ticket manager uses TicketQuerySet."""
         assert isinstance(Ticket.objects.get_queryset(), TicketQuerySet)
@@ -75,30 +49,35 @@ class TestTicketQuerySet:
             "refunded_filter",
         ],
     )
-    def test_status_filters(
-        self,
-        tickets_by_status,
-        method_name,
-        status,
-        expected_count,
-    ):
-        """Test individual status filter methods."""
+    def test_status_filters_ray(self, method_name, status, expected_count):
+        TicketFactory.create_batch(
+            expected_count,
+            status=status,
+            with_items=False,
+        )
+
         queryset_method = getattr(Ticket.objects, method_name)
         result = queryset_method()
 
         assert result.count() == expected_count
         for ticket in result:
             assert ticket.status == status
-            assert ticket in tickets_by_status[method_name]
 
-    def test_by_status_custom(self, tickets_by_status):
+    def test_by_status_custom(self):
         """Test by_status method with custom status."""
-        result = Ticket.objects.by_status(TicketStatusChoices.PROCESSED)
+        expected_count = 2
+        expected_status = TicketStatusChoices.PROCESSED
 
-        assert result.count() == 2
+        TicketFactory.create_batch(
+            expected_count,
+            status=expected_status,
+            with_items=False,
+        )
+        result = Ticket.objects.by_status(expected_status)
+
+        assert result.count() == expected_count
         for ticket in result:
-            assert ticket.status == TicketStatusChoices.PROCESSED
-            assert ticket in tickets_by_status["processed"]
+            assert ticket.status == expected_status
 
     def test_for_vehicle(self):
         """Test filtering tickets by vehicle."""

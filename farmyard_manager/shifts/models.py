@@ -7,17 +7,12 @@ from model_utils.models import TimeStampedModel
 
 from farmyard_manager.core.models import CleanBeforeSaveModel
 from farmyard_manager.core.models import UUIDModelMixin
-from farmyard_manager.users.models import User
+from farmyard_manager.shifts.enums import ShiftStatusChoices
 
 
 class Shift(UUIDModelMixin, TimeStampedModel, CleanBeforeSaveModel, models.Model):
-    class StatusChoices(models.TextChoices):
-        ACTIVE = ("active", "Active")
-        CLOSED = ("closed", "Closed")
-        SUSPENDED = ("suspended", "Suspended")
-
     user = models.ForeignKey(
-        User,
+        "users.User",
         on_delete=models.PROTECT,
         related_name="shifts",
     )
@@ -30,8 +25,8 @@ class Shift(UUIDModelMixin, TimeStampedModel, CleanBeforeSaveModel, models.Model
 
     status = models.CharField(
         max_length=50,
-        choices=StatusChoices.choices,
-        default=StatusChoices.ACTIVE,
+        choices=ShiftStatusChoices.choices,
+        default=ShiftStatusChoices.ACTIVE,
     )
 
     float_amount = models.DecimalField(
@@ -67,7 +62,7 @@ class Shift(UUIDModelMixin, TimeStampedModel, CleanBeforeSaveModel, models.Model
     discrepancy_notes = models.TextField(blank=True)
 
     adjusted_by = models.ForeignKey(
-        User,
+        "users.User",
         on_delete=models.PROTECT,
         related_name="adjusted_shifts",
         null=True,
@@ -104,7 +99,7 @@ class Shift(UUIDModelMixin, TimeStampedModel, CleanBeforeSaveModel, models.Model
     @property
     def is_active(self):
         """Check if shift is currently active"""
-        return self.status == self.StatusChoices.ACTIVE
+        return self.status == ShiftStatusChoices.ACTIVE
 
     @property
     def duration(self):
@@ -144,12 +139,12 @@ class Shift(UUIDModelMixin, TimeStampedModel, CleanBeforeSaveModel, models.Model
 
     def close_shift(self, actual_cash_amount, performed_by):
         """Close the shift and calculate discrepancies"""
-        if self.status != self.StatusChoices.ACTIVE:
+        if self.status != ShiftStatusChoices.ACTIVE:
             error_message = "Only active shifts can be closed"
             raise ValidationError(error_message)
 
         self.end_time = timezone.now()
-        self.status = self.StatusChoices.CLOSED
+        self.status = ShiftStatusChoices.CLOSED
         self.actual_cash_amount = actual_cash_amount
         self.expected_cash_amount = self.expected_till_balance
         self.discrepancy_amount = actual_cash_amount - self.expected_cash_amount
@@ -166,20 +161,20 @@ class Shift(UUIDModelMixin, TimeStampedModel, CleanBeforeSaveModel, models.Model
 
     def suspend_shift(self, reason=""):
         """Suspend an active shift"""
-        if self.status != self.StatusChoices.ACTIVE:
+        if self.status != ShiftStatusChoices.ACTIVE:
             error_message = "Only active shifts can be suspended"
             raise ValidationError(error_message)
 
-        self.status = self.StatusChoices.SUSPENDED
+        self.status = ShiftStatusChoices.SUSPENDED
         if reason:
             self.discrepancy_notes = f"Suspended: {reason}"
         self.save()
 
     def resume_shift(self):
         """Resume a suspended shift"""
-        if self.status != self.StatusChoices.SUSPENDED:
+        if self.status != ShiftStatusChoices.SUSPENDED:
             error_message = "Only suspended shifts can be resumed"
             raise ValidationError(error_message)
 
-        self.status = self.StatusChoices.ACTIVE
+        self.status = ShiftStatusChoices.ACTIVE
         self.save()

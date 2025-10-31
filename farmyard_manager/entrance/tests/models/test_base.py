@@ -16,8 +16,14 @@ from farmyard_manager.entrance.models.base import BaseEntranceRecord
 from farmyard_manager.entrance.models.base import BaseItem
 from farmyard_manager.entrance.models.base import BaseStatusHistory
 from farmyard_manager.entrance.models.enums import ItemTypeChoices
+from farmyard_manager.entrance.models.pricing import Pricing
 from farmyard_manager.users.tests.factories import UserFactory
 from farmyard_manager.utils.string_utils import to_snake_case
+
+
+@pytest.fixture(autouse=True)
+def use_pricing(with_pricing):
+    with_pricing(price=Decimal("100.00"))
 
 
 @pytest.mark.django_db(transaction=True)
@@ -202,18 +208,6 @@ class TestBaseItem:
         expected_amount = Decimal("150.00")  # 3 * 50.00
         assert item.amount_due == expected_amount
 
-    def test_base_item_get_price_without_item_type(self, fake_item_factory):
-        """Test get_price method raises error when item_type is None."""
-        item = fake_item_factory(
-            item_type=ItemTypeChoices.PUBLIC,
-            visitor_count=1,
-            applied_price=Decimal("100.00"),
-        )
-        item.item_type = None  # Simulate no item_type being passed
-
-        with pytest.raises(ValueError, match="Set item type befor getting price"):
-            item.get_price()
-
     @pytest.mark.parametrize(
         ("edit_kwargs", "expected_item_changes", "expected_history"),
         [
@@ -221,7 +215,7 @@ class TestBaseItem:
                 {"item_type": ItemTypeChoices.GROUP},
                 {
                     "item_type": ItemTypeChoices.GROUP,
-                    "applied_price": Decimal("150.00"),
+                    "applied_price": None,
                 },
                 {
                     "field": "item_type",
@@ -240,18 +234,14 @@ class TestBaseItem:
         ],
         ids=["edit_item_type", "edit_visitor_count"],
     )
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_base_item_edit_single_field(
         self,
-        mock_get_price,
         fake_item_factory,
         edit_kwargs,
         expected_item_changes,
         expected_history,
     ):
         """Test editing individual fields updates item and creates history."""
-        mock_get_price.return_value = Decimal("150.00")
-
         item = fake_item_factory(
             item_type=ItemTypeChoices.PUBLIC,
             visitor_count=2,
@@ -463,18 +453,16 @@ class TestBaseEntranceRecord:
         ],
         ids=["public_item", "group_item", "online_item"],
     )
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_add_item(
         self,
-        mock_get_price,
+        with_pricing,
         fake_entrance_record_factory,
         item_type,
         visitor_count,
         expected_price,
     ):
         """Test adding items to entrance record."""
-        mock_get_price.return_value = expected_price
-
+        with_pricing(price=Decimal("100.00"))
         record = fake_entrance_record_factory(save_to_db=True)
         user = UserFactory()
 
@@ -488,8 +476,6 @@ class TestBaseEntranceRecord:
         assert item.visitor_count == visitor_count
         assert item.applied_price == expected_price
         assert item.created_by == user
-        if expected_price is not None:
-            mock_get_price.assert_called_once()
 
     def test_add_item_with_custom_price(self, fake_entrance_record_factory):
         """Test adding item with custom applied price."""
@@ -506,11 +492,8 @@ class TestBaseEntranceRecord:
 
         assert item.applied_price == custom_price
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_remove_item_success(self, mock_get_price, fake_entrance_record_factory):
+    def test_remove_item_success(self, fake_entrance_record_factory):
         """Test successfully removing an item."""
-        mock_get_price.return_value = Decimal("100.00")
-
         record = fake_entrance_record_factory(save_to_db=True)
         user = UserFactory()
 
@@ -542,36 +525,30 @@ class TestBaseEntranceRecord:
         user = UserFactory()
 
         # Add multiple items
-        record.add_item(ItemTypeChoices.PUBLIC, 2, user, Decimal("50.00"))
-        record.add_item(ItemTypeChoices.GROUP, 3, user, Decimal("75.00"))
+        record.add_item(ItemTypeChoices.PUBLIC, 2, user, Decimal("100.00"))
+        record.add_item(ItemTypeChoices.PUBLIC, 3, user, Decimal("100.00"))
+        record.add_item(ItemTypeChoices.GROUP, 3, user)
 
-        expected_total = (2 * Decimal("50.00")) + (3 * Decimal("75.00"))
+        expected_total = Decimal("500.00")  # (2 + 3) x 100
         assert record.total_due == expected_total
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
     def test_total_visitors_calculation(
         self,
-        mock_get_price,
         fake_entrance_record_factory,
     ):
         """Test total visitors calculation with multiple items."""
-        mock_get_price.return_value = Decimal("100.00")
-
         record = fake_entrance_record_factory(save_to_db=True)
         user = UserFactory()
 
         # Add multiple items
-        record.add_item(ItemTypeChoices.PUBLIC, 2, user, Decimal("50.00"))
-        record.add_item(ItemTypeChoices.GROUP, 5, user, Decimal("75.00"))
+        record.add_item(ItemTypeChoices.PUBLIC, 2, user)
+        record.add_item(ItemTypeChoices.GROUP, 5, user)
 
         excepted_total_visitors = 7
         assert record.total_visitors == excepted_total_visitors
 
-    @patch("farmyard_manager.entrance.models.pricing.Pricing.objects.get_price")
-    def test_voided_items_property(self, mock_get_price, fake_entrance_record_factory):
+    def test_voided_items_property(self, fake_entrance_record_factory):
         """Test voided items property returns soft-deleted items."""
-        mock_get_price.return_value = Decimal("100.00")
-
         record = fake_entrance_record_factory(save_to_db=True)
         user = UserFactory()
 

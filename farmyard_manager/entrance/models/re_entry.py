@@ -49,6 +49,8 @@ class ReEntryItem(BaseItem, CleanBeforeSaveModel, models.Model):
         return super().__str__()
 
     def clean(self):
+        super().clean()
+
         status: str = self.re_entry.status
 
         # Status rules for creating items
@@ -102,10 +104,7 @@ class ReEntryStatusHistory(BaseStatusHistory, CleanBeforeSaveModel, models.Model
         db_table = "entrance_re_entry_status_history"
 
     def __str__(self):
-        return (
-            f"{self.performed_by}: {self.prev_status} → "
-            f"f{self.new_status}: {self.re_entry.ticket.id}"
-        )
+        return f"{self.performed_by}: {self.prev_status} → {self.new_status}"
 
     def clean(self):
         validate_text_choice(
@@ -157,7 +156,7 @@ class ReEntry(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
         validate_text_choice(
             self.status,
             self.StatusChoices,
-            "Invalid ticket status choice",
+            "Invalid re entry status choice",
         )
 
         if self.pk and self._original_status != self.status:
@@ -171,12 +170,12 @@ class ReEntry(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
         return max(0, (self.visitors_returned or 0) - self.visitors_left)
 
     @property
-    def payment_required(self):
-        # Only count additional visitors if MORE people returned than left
+    def all_additional_visitors_added(self):
+        """Ensures that enough items are added to cover all additional visitors."""
         added_visitor_count = sum(
             item.visitor_count for item in self.re_entry_items.all()
         )
-        return self.additional_visitors > added_visitor_count
+        return added_visitor_count == self.additional_visitors
 
     @property
     def is_processed(self):

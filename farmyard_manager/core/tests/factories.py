@@ -1,6 +1,7 @@
 import uuid
 from contextlib import suppress
 
+import factory
 from django.db import connection
 from django.db import models
 
@@ -130,3 +131,23 @@ class FakeModelFactory:
             managed = True
 
         return Meta
+
+
+class SkipCleanBeforeSaveFactoryMixin(factory.django.DjangoModelFactory):
+    """Factory mixin to top add control over CleanBeforeSaveModelMixin behavior."""
+
+    skip_clean = False
+
+    @classmethod
+    def _build(cls, model_class, *args, **kwargs):
+        # Remove skip_clean from kwargs for build() calls
+        kwargs.pop("skip_clean", None)
+        return super()._build(model_class, *args, **kwargs)
+
+    @classmethod
+    def _create(cls, model_class, *args, **kwargs):
+        # Extract the skip_clean value from kwargs (it gets added by factory-boy)
+        skip_clean = kwargs.pop("skip_clean", False)
+        instance = model_class(*args, **kwargs)
+        instance.save(clean=not skip_clean)
+        return instance

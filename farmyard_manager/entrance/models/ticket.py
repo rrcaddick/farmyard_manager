@@ -51,6 +51,8 @@ class TicketItem(BaseItem, CleanBeforeSaveModel, models.Model):
         return super().__str__()
 
     def clean(self):
+        super().clean()
+
         # Status rules for creating items
         action = "edit" if self.pk else "add"
 
@@ -64,8 +66,6 @@ class TicketItem(BaseItem, CleanBeforeSaveModel, models.Model):
 
         if error_message != "":
             raise ValidationError(error_message)
-
-        return True
 
     def delete(self, *args, **kwargs):
         if self.ticket.is_processed:
@@ -131,6 +131,8 @@ class Ticket(BaseEntranceRecord, CleanBeforeSaveModel, models.Model):
     status_history_model = TicketStatusHistory
 
     re_entries: "QuerySet[ReEntry]"
+
+    ticket_items: "QuerySet[TicketItem]"
 
     status = models.CharField(
         max_length=255,
