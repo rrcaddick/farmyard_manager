@@ -41,7 +41,7 @@ utility/
 webpack/
 
 # tests
-*test*
+# *test*
 
 *migration*
 

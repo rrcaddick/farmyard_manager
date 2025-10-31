@@ -237,7 +237,7 @@ class RefundVehicleAllocationManager(
         TicketItemModel: type[TicketItem] = apps.get_model("entrance", "TicketItem")  # noqa: N806
         ReEntryItemModel: type[ReEntryItem] = apps.get_model("entrance", "ReEntryItem")  # noqa: N806
 
-        entrance_item = vehicle.get_paid_item(refund.payment)
+        entrance_item = vehicle.get_public_item(refund.payment)
 
         if not isinstance(entrance_item, (TicketItemModel, ReEntryItemModel)):
             error_message = "Entrance item must be a Ticket item or ReEntry item"
@@ -292,7 +292,7 @@ class RefundTransactionItemManager(
         transaction_item: "TransactionItem",
         added_by: "User",
         visitor_count: int,
-        requested_amount: Decimal,
+        amount: Decimal,
         **kwargs,
     ) -> "RefundTransactionItem":
         """Adds a pending refund transaction item to refund"""
@@ -321,7 +321,7 @@ class RefundTransactionItemManager(
             error_message = "Visitor count exceeds remaining refundable count"
             raise ValidationError(error_message)
 
-        if requested_amount > transaction_item.remaining_refundable_amount:
+        if amount > transaction_item.remaining_refundable_amount:
             error_message = "Amount exceeds remaining refundable amount"
             raise ValidationError(error_message)
 
@@ -330,7 +330,7 @@ class RefundTransactionItemManager(
             transaction_item=transaction_item,
             added_by=added_by,
             visitor_count=visitor_count,
-            requested_amount=requested_amount,
+            amount=amount,
             **kwargs,
         )
 
@@ -411,7 +411,7 @@ class RefundTransactionItemManager(
                     transaction_item=transaction_item,
                     added_by=added_by,
                     visitor_count=visitor_count,
-                    requested_amount=amount,
+                    amount=amount,
                     **kwargs,
                     **shared_kwargs,
                 ),

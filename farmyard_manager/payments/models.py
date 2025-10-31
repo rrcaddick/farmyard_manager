@@ -16,6 +16,7 @@ from farmyard_manager.core.models import CleanBeforeSaveModel
 from farmyard_manager.core.models import TransitionTextChoices
 from farmyard_manager.core.models import UUIDModelMixin
 from farmyard_manager.core.models import UUIDRefNumberModelMixin
+from farmyard_manager.payments.enums import RefundVehicleAllocationStatusChoices
 from farmyard_manager.payments.managers import PaymentManager
 from farmyard_manager.payments.managers import RefundManager
 from farmyard_manager.payments.managers import RefundTransactionItemManager
@@ -48,6 +49,8 @@ class Payment(
     #         * initiate_refund
     #         * add/remove tickets and re-entries
     #         * update_status
+
+    # TODO: Decide on a PENDING_REFUND status
 
     class PaymentStatusChoices(TransitionTextChoices):
         PENDING_SETTLEMENT = ("pending_settlement", "Pending Settlement")
@@ -104,8 +107,10 @@ class Payment(
         """
         Total amount due for this payment including tickets and re-entries
         """
-        ticket_total = sum(ticket.total_due for ticket in self.tickets.all())
-        re_entry_total = sum(re_entry.total_due for re_entry in self.re_entries.all())
+        ticket_total = sum(ticket.total_due for ticket in self.tickets.all()) or 0
+        re_entry_total = (
+            sum(re_entry.total_due for re_entry in self.re_entries.all()) or 0
+        )
         return ticket_total + re_entry_total
 
     @property
@@ -113,26 +118,23 @@ class Payment(
         """
         Total visitor count for this payment including tickets and re-entries
         """
-        return sum(ticket.total_due_visitors for ticket in self.tickets.all()) + sum(
-            re_entry.total_due_visitors for re_entry in self.re_entries.all()
+        return sum(ticket.total_due_count for ticket in self.tickets.all()) + sum(
+            re_entry.total_due_count for re_entry in self.re_entries.all()
         )
 
     @property
     def total_paid(self):
-        """Total of processed transactions"""
-        return sum(
-            transaction.amount
-            for transaction in self.transaction_items.all()
-            if transaction.status == TransactionItem.StatusChoices.PROCESSED
-        )
+        """Total of processed transactions. No status check, because all are paid"""
+        return sum(transaction.amount for transaction in self.transaction_items.all())
 
     @property
     def total_paid_count(self):
-        """Visitor count covered by processed transactions"""
+        """
+        Visitor count covered by processed transactions.
+        No status check, because all are paid
+        """
         return sum(
-            transaction.visitor_count
-            for transaction in self.transaction_items.all()
-            if transaction.status == TransactionItem.StatusChoices.PROCESSED
+            transaction.visitor_count for transaction in self.transaction_items.all()
         )
 
     @property
@@ -158,16 +160,16 @@ class Payment(
         """
         Check if payment is still within refund time window and status allows refund
         """
-        return (
-            self.status
-            in [
-                self.PaymentStatusChoices.SETTLED,
-                self.PaymentStatusChoices.PARTIALLY_REFUNDED,
-            ]
-            and timezone.now() <= self.refund_deadline
-            if self.refund_deadline
-            else False
-        )
+        if not self.completed_at:
+            return False
+
+        if self.status in [
+            self.PaymentStatusChoices.SETTLED,
+            self.PaymentStatusChoices.PARTIALLY_SETTLED,
+        ]:
+            return timezone.now() <= self.refund_deadline
+
+        return self.status == self.PaymentStatusChoices.PARTIALLY_REFUNDED
 
     @property
     def refund_in_progress(self):
@@ -269,8 +271,6 @@ class Payment(
         Automatically update status based on payment
         amounts and set completed_at if fully paid
         """
-        old_status = self.status
-
         if new_status is None:
             # If no payments have been made, keep status as pending
             if self.total_paid == 0:
@@ -284,9 +284,15 @@ class Payment(
                 if not self.completed_at:
                     self.completed_at = timezone.now()
 
+        assert new_status is not None
+
+        if self.status == new_status.value:
+            return
+
         # Validate transition
-        self.PaymentStatusChoices.validate_choice_transition(old_status, new_status)
-        self.status = str(new_status)
+        self.PaymentStatusChoices.validate_choice_transition(self.status, new_status)
+
+        self.status = new_status.value
         self.save(update_fields=["status", "completed_at"])
 
     def initiate_refund(
@@ -324,7 +330,7 @@ class Payment(
             raise ValidationError(error_message)
 
         # Payment needs to be attached to at least one source
-        if not self.tickets.exists() and not self.re_entries.exists():
+        if not self.tickets.all().exists() and not self.re_entries.all().exists():
             error_message = "Payment must have at least one ticket or re-entry"
             raise ValidationError(error_message)
 
@@ -403,7 +409,12 @@ class TransactionItem(
 
     amount = models.DecimalField(max_digits=10, decimal_places=2)
 
-    cash_tendered = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    cash_tendered = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
 
     addpay_rrn = models.CharField(max_length=255, blank=True)
 
@@ -459,7 +470,7 @@ class TransactionItem(
     def total_processed_refund_amount(self):
         """Total amount refunded from this transaction item"""
         return sum(
-            refund_transaction.processed_amount or 0
+            refund_transaction.amount
             for refund_transaction in self.refund_transaction_items.filter(
                 status=RefundTransactionItem.StatusChoices.PROCESSED,
             )
@@ -479,7 +490,7 @@ class TransactionItem(
     def total_pending_refund_amount(self):
         """Total pending refunds transactions amount for this item"""
         return sum(
-            refund_transaction.requested_amount
+            refund_transaction.amount
             for refund_transaction in self.refund_transaction_items.filter(
                 status=RefundTransactionItem.StatusChoices.PENDING,
             )
@@ -541,20 +552,7 @@ class RefundVehicleAllocation(
     SoftDeletableModel,
     models.Model,
 ):
-    class RefundVehicleAllocationStatusChoices(TransitionTextChoices):
-        PENDING_COUNT = ("pending_count", "Pending Count")
-        COUNTED = ("counted", "Counted")
-        SETTLED = ("settled", "Settled")
-        DENIED = ("denied", "Denied")
-
-        @classmethod
-        def get_transition_map(cls) -> dict:
-            return {
-                cls.PENDING_COUNT: [cls.COUNTED],
-                cls.COUNTED: [cls.SETTLED, cls.DENIED],
-                cls.SETTLED: [],
-                cls.DENIED: [],
-            }
+    StatusChoices = RefundVehicleAllocationStatusChoices
 
     refund = models.ForeignKey["Refund", "Refund"](
         "payments.Refund",
@@ -612,6 +610,10 @@ class RefundVehicleAllocation(
             models.Index(fields=["refund", "status"]),
         ]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._original_visitor_count = self.visitor_count or 0
+
     def __str__(self):
         return f"Vehicle {self.vehicle.plate_number} - {self.visitor_count} visitors"
 
@@ -629,7 +631,9 @@ class RefundVehicleAllocation(
 
     def clean(self):
         # Ensures exactly one entrance item set
-        if (self.ticket_item and self.re_entry_item) or not self.entrance_item:
+        if (self.ticket_item and self.re_entry_item) or (
+            not self.ticket_item and not self.re_entry_item
+        ):
             raise ValidationError(
                 _("Allocation needs to be linked to a single entrance item"),
             )
@@ -637,25 +641,29 @@ class RefundVehicleAllocation(
         # Ensures that refund payment matches entrance item payment
         if self.entrance_item.payment != self.refund.payment:
             raise ValidationError(
-                _("Cannot allocated a vehicle from a different payment"),
+                _("Cannot allocate a vehicle from a different payment"),
             )
 
-        # Prevents 0 visitor count
-        if self.visitor_count is not None and self.visitor_count <= 0:
-            raise ValidationError(_("Visitor count must be greater than 0."))
+        if self.visitor_count is not None:
+            # Prevents 0 visitor count
+            if self.visitor_count <= 0:
+                raise ValidationError(_("Visitor count must be greater than 0."))
 
-        # Ensures allocation count stays within refundable limit
-        if self.visitor_count > self.entrance_item.remaining_refundable_visitor_count:
-            raise ValidationError(_("Count exceeds remaining refundable visitors."))
+            # Ensures allocation count stays within refundable limit
+            if (
+                self.visitor_count
+                > self.entrance_item.remaining_refundable_visitor_count
+            ):
+                raise ValidationError(_("Count exceeds remaining refundable visitors."))
 
-    def update_visitor_count(self, count: int):
+    def update_visitor_count(self, count: int, *, save: bool = False):
         """
         Updates the allocation visitor count. Ensure the count does not
         exceed remaining refundable count
         """
         if self.status not in [
-            self.RefundVehicleAllocationStatusChoices.PENDING_COUNT,
-            self.RefundVehicleAllocationStatusChoices.COUNTED,
+            RefundVehicleAllocationStatusChoices.PENDING_COUNT,
+            RefundVehicleAllocationStatusChoices.COUNTED,
         ]:
             error_message = "Can't update count on completed allocations'"
             raise ValueError(error_message)
@@ -664,12 +672,23 @@ class RefundVehicleAllocation(
             error_message = "Count cannot be 0 or negative"
             raise ValueError(error_message)
 
-        if count > self.entrance_item.remaining_refundable_visitor_count:
+        # Add back the original count only for existing records
+        original_count = self._original_visitor_count if self.pk else 0
+
+        # Add the current allocation count to the available count
+        available_count = (
+            self.entrance_item.remaining_refundable_visitor_count + original_count
+        )
+
+        if count > available_count:
             error_message = "Count exceeds remaining refundable amount"
             raise ValueError(error_message)
 
         self.visitor_count = count
-        self.status = self.RefundVehicleAllocationStatusChoices.COUNTED
+        self.status = RefundVehicleAllocationStatusChoices.COUNTED
+
+        if save:
+            self.save(update_fields=["visitor_count", "status"])
 
 
 class RefundTransactionItem(
@@ -717,9 +736,7 @@ class RefundTransactionItem(
 
     visitor_count = models.PositiveIntegerField()
 
-    requested_amount = models.DecimalField(max_digits=10, decimal_places=2)
-
-    processed_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
 
     added_by = models.ForeignKey(
         "users.User",
@@ -741,31 +758,13 @@ class RefundTransactionItem(
 
     class Meta:
         db_table = "payments_refund_transaction_items"
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(requested_amount__gt=0),
-                name="positive_requested_amount",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(
-                    status__in=["pending", "denied"],
-                    processed_amount__isnull=True,
-                )
-                | models.Q(
-                    status="processed",
-                    processed_amount__gt=0,
-                ),
-                name="processed_amount_valid_for_status",
-            ),
-        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._original_visitor_count = self.visitor_count or 0
 
     def __str__(self):
-        amount = (
-            self.processed_amount
-            if self.status == self.StatusChoices.PROCESSED
-            else self.requested_amount
-        )
-        return f"RefundTransaction {self.id} - {self.status} - R{amount}"
+        return f"RefundTransaction {self.id} - {self.status} - R{self.amount}"
 
     def clean(self):
         """Validate refund transaction constraints"""
@@ -774,26 +773,36 @@ class RefundTransactionItem(
             error_message = "Visitor count must be greater than 0"
             raise ValidationError(error_message)
 
+        original_count = self._original_visitor_count if self.pk else 0
+
+        # Add the current allocation count to the available count
+        available_allocation_count = (
+            self.refund.remaining_refundable_count + original_count
+        )
+
         # Ensure that transaction is within vehicle allocation limits
-        if self.visitor_count > self.refund.remaining_refundable_count:
+        if self.visitor_count > available_allocation_count:
             error_message = "Requested refund count more than added allocated count"
             raise ValidationError(error_message)
 
+        # Add the current allocation count to the available count
+        available_count = (
+            self.transaction_item.remaining_refundable_count + original_count
+        )
+
         # Ensure amount doesn't exceed what's available from original transaction
-        if self.visitor_count > self.transaction_item.remaining_refundable_count:
+        if self.visitor_count > available_count:
             error_message = (
                 "Requested refund count more than remaining refundable count"
             )
             raise ValidationError(error_message)
 
-    def mark_processed(
+    def process_transaction(
         self,
         processed_by: "User",
-        processed_amount: Decimal,
     ):
         """
-        Marks pending refund transaction as processed. Called from the addpay
-        wehook for card payemnts
+        Marks pending refund transaction as processed. Uses paycloud api to process
         """
 
         if self.status != self.StatusChoices.PENDING:
@@ -801,7 +810,6 @@ class RefundTransactionItem(
             raise ValidationError(error_message)
 
         self.status = self.StatusChoices.PROCESSED
-        self.processed_amount = processed_amount
         self.processed_by = processed_by
         self.processed_at = timezone.now()
 
@@ -809,7 +817,6 @@ class RefundTransactionItem(
             update_fields=[
                 "status",
                 "processed_by",
-                "processed_amount",
                 "processed_at",
             ],
         )
@@ -895,7 +902,7 @@ class Refund(
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._original_status = self.status if self.pk else None
+        self._original_status = self.status
 
     @property
     def total_allocation_count(self):
@@ -928,7 +935,7 @@ class Refund(
     def processed_refund_amount(self):
         """Total amount already refunded"""
         return sum(
-            item.processed_amount or 0
+            item.amount
             for item in self.refund_transaction_items.filter(
                 status=RefundTransactionItem.StatusChoices.PROCESSED,
             )
@@ -938,7 +945,7 @@ class Refund(
     def pending_refund_amount(self):
         """Total amount being refunded"""
         return sum(
-            item.requested_amount
+            item.amount
             for item in self.refund_transaction_items.filter(
                 status=RefundTransactionItem.StatusChoices.PENDING,
             )
@@ -958,7 +965,7 @@ class Refund(
         return (
             qs.exists()
             and not qs.filter(
-                status=RefundVehicleAllocation.RefundVehicleAllocationStatusChoices.PENDING_COUNT,
+                status=RefundVehicleAllocationStatusChoices.PENDING_COUNT,
             ).exists()
         )
 
@@ -1005,7 +1012,7 @@ class Refund(
 
         # Settle all allocations
         self.vehicle_allocations.update(
-            status=RefundVehicleAllocation.RefundVehicleAllocationStatusChoices.SETTLED,
+            status=RefundVehicleAllocationStatusChoices.SETTLED,
         )
 
         # Update payment status
@@ -1050,7 +1057,7 @@ class Refund(
 
             # Update all vehicle allocations to denied
             self.vehicle_allocations.update(
-                status=RefundVehicleAllocation.RefundVehicleAllocationStatusChoices.DENIED,
+                status=RefundVehicleAllocationStatusChoices.DENIED,
             )
 
             # Update all transaction items to denied
@@ -1083,6 +1090,7 @@ class Refund(
 
     def update_status(self, new_status: "Refund.StatusChoices"):
         """Validate status transition and update refund status"""
+        # TODO: There should be validations on status in terms of counts and amounts
         prev_status = self.status
 
         self.StatusChoices.validate_choice_transition(prev_status, new_status)
@@ -1137,7 +1145,7 @@ class Refund(
         transaction_item: TransactionItem,
         added_by: "User",
         visitor_count: int,
-        requested_amount: Decimal,
+        amount: Decimal,
         **kwargs,
     ):
         """Add a transaction item to this refund"""
@@ -1146,7 +1154,7 @@ class Refund(
             transaction_item,
             added_by,
             visitor_count,
-            requested_amount,
+            amount,
             **kwargs,
         )
 
@@ -1154,7 +1162,6 @@ class Refund(
         self,
         refund_transaction_item: "RefundTransactionItem",
         processed_by: "User",
-        processed_amount: Decimal,
     ):
         """Marks a pending refund transaction as processed"""
         # Ensure that only manager are able to process refunds
@@ -1169,9 +1176,8 @@ class Refund(
             )
 
         with transaction.atomic():
-            transaction_item = refund_transaction_item.mark_processed(
+            transaction_item = refund_transaction_item.process_transaction(
                 processed_by=processed_by,
-                processed_amount=processed_amount,
             )
 
             if self.all_transactions_processed:
@@ -1183,6 +1189,9 @@ class Refund(
 
     def clean(self):
         """Validate refund business rules"""
+        if not self.pk:
+            return
+
         if self.payment.status not in [
             Payment.PaymentStatusChoices.SETTLED,
             Payment.PaymentStatusChoices.PARTIALLY_REFUNDED,
@@ -1202,7 +1211,7 @@ class Refund(
             error_message = "Refund exceeds payment remaining refundable amount"
             raise ValidationError(error_message)
 
-        # Validate status transitions
+        # Validate manual status transitions
         if self.pk and hasattr(self, "_original_status"):
             self.StatusChoices.validate_choice_transition(
                 self._original_status,
